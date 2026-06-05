@@ -9,6 +9,7 @@ import {
 } from './dfo.types';
 
 import { EngagementService } from './engagement/engagement.service';
+import { isValidPhoneNumber } from './janmasethu.leads.service';
 
 @Injectable()
 export class JanmasethuDFOService implements OnModuleInit {
@@ -29,8 +30,23 @@ export class JanmasethuDFOService implements OnModuleInit {
      */
     async registerOrUpdatePatient(dto: Partial<DFOPatient>): Promise<DFOPatient> {
         this.logger.debug(`Synchronizing patient identity: ${dto.phone_number || dto.id}`);
+        
+        // 1. Strict Phone Integrity Validation
+        if (dto.phone_number && !isValidPhoneNumber(dto.phone_number)) {
+            throw new Error(`Invalid Phone Number: "${dto.phone_number}" is fake or sequential.`);
+        }
+
         const existing = await this.repository.findPatientByResolution(dto.phone_number, dto.auth_user_id);
         const payload = { ...dto, updated_at: new Date() };
+
+        // 2. Symmetric Vault Encryption mapping to avoid plaintext leaks
+        if (dto.full_name) {
+            payload.full_name = this.encryption.encrypt(dto.full_name);
+        }
+        if (dto.phone_number) {
+            payload.phone_number = this.encryption.encrypt(dto.phone_number);
+        }
+
         const patient = await this.repository.upsertDFOPatient(payload);
 
         if (dto.last_thread_id) {
@@ -43,7 +59,7 @@ export class JanmasethuDFOService implements OnModuleInit {
         const profile = await this.repository.findPatientProfile(patientId);
         if (!profile) return null;
 
-        // 1. CLEAR-TEXT DECRYPTION (For Clinician View)
+        // 3. CLEAR-TEXT DECRYPTION (For Clinician View)
         return {
             ...profile,
             full_name: this.encryption.decrypt(profile.full_name),
@@ -77,8 +93,17 @@ export class JanmasethuDFOService implements OnModuleInit {
 
     async startConsultation(threadId: string, doctorId: string): Promise<DFOConsultation> {
         this.logger.log(`Starting consultation: Thread ${threadId}`);
+        
+        // 4. Strict validation check boundaries on thread and linked patient
         const thread = await this.repository.findThreadById(threadId);
-        const patientId = thread?.metadata?.patient_id || threadId;
+        if (!thread) {
+            throw new Error(`Consultation startup failed: Thread "${threadId}" not found.`);
+        }
+
+        const patientId = thread.metadata?.patient_id;
+        if (!patientId) {
+            throw new Error(`Consultation startup failed: Thread "${threadId}" is not linked to any active patient profile.`);
+        }
 
         return this.repository.startConsultation({
             thread_id: threadId,
@@ -90,6 +115,11 @@ export class JanmasethuDFOService implements OnModuleInit {
     }
 
     async createPatient(dto: any) {
+        // 1. Strict Phone Integrity Validation
+        if (dto.phone_number && !isValidPhoneNumber(dto.phone_number)) {
+            throw new Error(`Invalid Phone Number: "${dto.phone_number}" is fake or sequential.`);
+        }
+
         // 2. VAULT ENCRYPTION (For Database Safety)
         const securedDto = {
             ...dto,

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { JanmasethuUserRole, JanmasethuPermission, JanmasethuUserContext } from './janmasethu.types';
 import { Thread } from '../../types';
+import { JanmasethuScopePolicy } from './JanmasethuScopePolicy';
 
 @Injectable()
 export class JanmasethuRbacService {
@@ -26,11 +27,18 @@ export class JanmasethuRbacService {
         ],
     };
 
+    constructor(private readonly scopePolicy: JanmasethuScopePolicy) {}
+
     hasPermission(role: JanmasethuUserRole, permission: JanmasethuPermission): boolean {
         return this.permissionMatrix[role]?.includes(permission) || false;
     }
 
     canViewThread(user: JanmasethuUserContext, thread: Thread): boolean {
+        if (!this.hasPermission(user.role, JanmasethuPermission.VIEW_THREAD)) return false;
+
+        // Enforce symmetrical status visibility logic with Scope Policy
+        if (!this.scopePolicy.canView(user, thread)) return false;
+
         if (user.role === JanmasethuUserRole.CRO) return true;
 
         if (user.role === JanmasethuUserRole.DOCTOR) {
@@ -38,7 +46,7 @@ export class JanmasethuRbacService {
         }
 
         if (user.role === JanmasethuUserRole.NURSE) {
-            return thread.assigned_role === 'NURSE_QUEUE';
+            return thread.assigned_user_id === user.id || thread.assigned_role === 'NURSE_QUEUE';
         }
 
         return false;
@@ -49,28 +57,19 @@ export class JanmasethuRbacService {
     }
 
     canTakeControl(user: JanmasethuUserContext, thread: Thread): boolean {
-        const status = thread.status as string;
+        if (!this.hasPermission(user.role, JanmasethuPermission.TAKE_CONTROL)) return false;
 
-        // CRO can take control of red and yellow
-        if (user.role === JanmasethuUserRole.CRO) {
-            return ['red', 'yellow'].includes(status);
-        }
+        // Enforce strict assignment match constraint symmetrically
+        if (thread.assigned_user_id !== user.id) return false;
 
-        // Only DOCTOR can take control of red
-        if (user.role === JanmasethuUserRole.DOCTOR) {
-            return status === 'red';
-        }
-
-        // NURSE can take control of yellow, and RED as first responder
-        if (user.role === JanmasethuUserRole.NURSE) {
-            return ['yellow', 'red'].includes(status);
-        }
-
-        return false;
+        return this.scopePolicy.canTakeControl(user, thread);
     }
 
     canReply(user: JanmasethuUserContext, thread: Thread): boolean {
         if (!this.hasPermission(user.role, JanmasethuPermission.REPLY)) return false;
+
+        // Clinicians must be assigned to reply
+        if (user.role !== JanmasethuUserRole.CRO && thread.assigned_user_id !== user.id) return false;
 
         const status = thread.status as string;
 
@@ -79,14 +78,12 @@ export class JanmasethuRbacService {
             return ['red', 'yellow'].includes(status);
         }
 
-        // Doctor/Nurse can only reply if assigned to them or if they took control 
-        // AND the status matches their role.
         if (user.role === JanmasethuUserRole.DOCTOR) {
-            return status === 'red' && thread.assigned_user_id === user.id;
+            return status === 'red';
         }
 
         if (user.role === JanmasethuUserRole.NURSE) {
-            return ['yellow', 'red'].includes(status) && thread.assigned_user_id === user.id;
+            return ['yellow', 'red'].includes(status);
         }
 
         return false;

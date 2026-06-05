@@ -35,6 +35,41 @@ const COLUMN_MAPPINGS: Record<string, string> = {
     'location': 'location', 'City': 'location',
 };
 
+/**
+ * Dynamic clinical template outbox registry
+ */
+export const OUTREACH_TEMPLATES = {
+    WELCOME_NUDGE: (name: string) => 
+        `Welcome to the Janmasethu Clinical Network, ${name}! 🏥 Your clinical profile is now active. How can we assist you today?`,
+    CARE_NUDGE: (name: string, problem: string) => 
+        `Hi ${name}, this is the Janmasethu Care Team. We noticed you were inquiring about "${problem}" yesterday. Would you like to schedule a quick call with our specialist? 😊🩺`,
+};
+
+/**
+ * Advanced phone validation function
+ * Rejects:
+ * - Empty or wrong digit lengths (non-10 to 15 digits)
+ * - Identical digits (e.g., 0000000000, 9999999999)
+ * - Sequential digits (e.g., 0123456789, 1234567890, 9876543210)
+ */
+export function isValidPhoneNumber(phone: string): boolean {
+    if (!phone) return false;
+    const digits = phone.replace(/\D/g, '');
+    
+    // Validate digit length
+    if (digits.length < 10 || digits.length > 15) return false;
+    
+    // Reject repetitive identical numbers (e.g. 0000000000, 9999999999)
+    if (/^(\d)\1+$/.test(digits)) return false;
+    
+    // Reject sequential ascending or descending numbers
+    const sequentialAsc = '0123456789012345';
+    const sequentialDesc = '9876543210987654';
+    if (sequentialAsc.includes(digits) || sequentialDesc.includes(digits)) return false;
+    
+    return true;
+}
+
 @Injectable()
 export class JanmasethuLeadsService {
     private readonly logger = new Logger(JanmasethuLeadsService.name);
@@ -48,6 +83,8 @@ export class JanmasethuLeadsService {
     /**
      * MIGRATED CORE FROM JS_Clinics_Backend
      * - Normalizes incoming lead payload (mapping headers, resolving status/source mix-up).
+     * - Performs advanced validation on phone numbers to reject fake/random entries.
+     * - Checks for active duplicates before creating a new entry.
      * - Enforces AES-256 encryption on clinical medical fields.
      */
     async createLead(rawPayload: Record<string, any>) {
@@ -60,7 +97,22 @@ export class JanmasethuLeadsService {
             throw new Error('Mandatory Fields Missing: Name and Phone Number are required for Clinic Lead Registration.');
         }
 
-        // 1. Prepare clinical payload with encryption
+        // 1. Strict Phone Integrity Validation
+        if (!isValidPhoneNumber(phone)) {
+            throw new Error(`Invalid Phone Number: "${phone}" is fake, repetitive, or sequential.`);
+        }
+
+        // 2. Active Duplicate Check
+        const existing = await this.repository.findLeads({ page: 1, limit: 1, query: phone });
+        if (existing && existing.items && existing.items.length > 0) {
+            const activeLead = existing.items.find(lead => ['New Inquiry', 'Follow Up'].includes(lead.status));
+            if (activeLead) {
+                this.logger.log(`JanmaSethu: Duplicate lead registration bypassed for ${phone}. Merging inquiry.`);
+                return activeLead;
+            }
+        }
+
+        // 3. Prepare clinical payload with encryption
         const payload = {
             ...body,
             status: this.normalizeStatus(body.status),
@@ -71,14 +123,14 @@ export class JanmasethuLeadsService {
 
         this.logger.log(`JanmaSethu: Registering new clinical lead for ${name} [${phone}]`);
 
-        // 2. Persist in Repository
+        // 4. Persist in Repository
         return await this.repository.createLead(payload);
     }
 
     async getLeads(filters: any) {
         const { items, pagination } = await this.repository.findLeads(filters);
 
-        // 3. Decrypt on Retrieval
+        // Decrypt on Retrieval
         const decryptedItems = items.map(lead => ({
             ...lead,
             problem: this.encryption.decrypt(lead.problem),
@@ -92,7 +144,7 @@ export class JanmasethuLeadsService {
     /**
      * STALLED LEADS BATCH PROCESSOR
      * - Identifies leads in 'New Inquiry' > 24h.
-     * - Performs non-invasive "Care Nudge" outreach.
+     * - Performs non-invasive "Care Nudge" outreach using templates.
      */
     async processStalledLeads() {
         this.logger.log('Janmasethu: Scanning for stalled clinical leads...');
@@ -120,12 +172,12 @@ export class JanmasethuLeadsService {
 
         this.logger.warn(`[LEAD_NUDGE] Patient: ${lead.name} (${lead.phone}) | Topic: ${decryptedProblem}`);
 
-        // --- CARE NUDGE TEMPLATE ---
-        const message = `Hi ${lead.name}, this is the Janmasethu Care Team. We noticed you were inquiring about "${decryptedProblem}" yesterday. Would you like to schedule a quick call with our specialist? 😊🩺`;
+        // --- CARE NUDGE DYNAMIC TEMPLATE ---
+        const message = OUTREACH_TEMPLATES.CARE_NUDGE(lead.name, decryptedProblem);
 
         this.logger.log(`Dispatching Outreach: ${message}`);
 
-        // 4. Update status to 'Follow Up' to mark activity
+        // Update status to 'Follow Up' to mark activity
         return await this.repository.updateLeadStatus(
             lead.id,
             'Follow Up',
@@ -170,7 +222,7 @@ export class JanmasethuLeadsService {
     /**
      * LEAD CONVERSION WORKFLOW
      * - Promotional promotion of a clinical lead to a full patient profile.
-     * - Triggers a welcome engagement nudge.
+     * - Safe try-catch-compensate sequence to guarantee transactional state integrity.
      */
     async convertLeadToPatient(leadId: string, doctorId: string) {
         this.logger.log(`JanmaSethu: Converting clinical lead ${leadId} to full patient profile...`);
@@ -178,38 +230,55 @@ export class JanmasethuLeadsService {
 
         if (!lead) throw new Error('Lead not found');
 
-        // 1. Create Patient Profile (Encrypted)
-        const patient = await this.repository.upsertDFOPatient({
-            full_name: this.encryption.encrypt(lead.name),
-            phone_number: this.encryption.encrypt(lead.phone),
-            journey_stage: JourneyStage.NOT_SPECIFIED,
-            metadata: {
-                converted_from_lead: leadId,
-                original_inquiry: this.encryption.decrypt(lead.problem),
-                treatment_onboarding: lead.treatment_suggested
+        const originalStatus = lead.status;
+        const originalInquiry = lead.inquiry;
+
+        let patient;
+        try {
+            // 1. Create Patient Profile (Encrypted)
+            patient = await this.repository.upsertDFOPatient({
+                full_name: this.encryption.encrypt(lead.name),
+                phone_number: this.encryption.encrypt(lead.phone),
+                journey_stage: JourneyStage.NOT_SPECIFIED,
+                metadata: {
+                    converted_from_lead: leadId,
+                    original_inquiry: this.encryption.decrypt(lead.problem),
+                    treatment_onboarding: lead.treatment_suggested
+                }
+            });
+
+            // 2. Update Lead Status
+            await this.repository.updateLeadStatus(leadId, 'Converted', `Account promoted to Patient ID: ${patient.id}`);
+
+            // 3. Trigger Welcome Engagement with registry template
+            const message = OUTREACH_TEMPLATES.WELCOME_NUDGE(lead.name);
+            await this.dispatcher.dispatchResponse('whatsapp', lead.phone, message);
+
+            // 4. Record the engagement
+            await this.repository.insertEngagementLog({
+                patient_id: patient.id,
+                channel: 'whatsapp',
+                content: message,
+                status: 'SENT'
+            });
+
+            return {
+                success: true,
+                patient_id: patient.id,
+                onboarding: 'WELCOME_NUDGE_SENT'
+            };
+        } catch (error) {
+            this.logger.error(`JanmaSethu: Failed to convert lead to patient ${leadId}. Reverting lead status for transaction safety.`);
+            
+            // Compensate state by reverting status back to original state
+            try {
+                await this.repository.updateLeadStatus(leadId, originalStatus, originalInquiry);
+            } catch (revertError) {
+                this.logger.error(`Critical state divergence: Failed to compensate lead status for ${leadId}: ${revertError.message}`);
             }
-        });
 
-        // 2. Update Lead Status
-        await this.repository.updateLeadStatus(leadId, 'Converted', `Account promoted to Patient ID: ${patient.id}`);
-
-        // 3. Trigger Welcome Engagement
-        const message = `Welcome to the Janmasethu Clinical Network, ${lead.name}! 🏥 Your clinical profile is now active. How can we assist you today?`;
-        await this.dispatcher.dispatchResponse('whatsapp', lead.phone, message);
-
-        // Record the engagement
-        await this.repository.insertEngagementLog({
-            patient_id: patient.id,
-            channel: 'whatsapp',
-            content: message,
-            status: 'SENT'
-        });
-
-        return {
-            success: true,
-            patient_id: patient.id,
-            onboarding: 'WELCOME_NUDGE_SENT'
-        };
+            throw error;
+        }
     }
 
     private looksLikeSource(value: string): boolean {
@@ -223,3 +292,4 @@ export class JanmasethuLeadsService {
         return VALID_STATUSES.some(s => s.toLowerCase() === trimmed) || trimmed.includes('follow') || trimmed.includes('inquiry');
     }
 }
+

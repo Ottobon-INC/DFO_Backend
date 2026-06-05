@@ -66,7 +66,19 @@ export class JanmasethuSlaWorker extends WorkerHost {
 
         // 1. REVALIDATE STATE: Is the thread still in the same risk level?
         const isStillInRisk = thread.status === category;
-        const isStillAssignedToSameRole = thread.assigned_user_id ? true : false; // Simplification
+        
+        // Strict mapping verification: Ensure current queue/assigned role matches the expected target
+        let isStillAssignedToSameRole = false;
+        if (thread.assigned_user_id) {
+            if (role === JanmasethuUserRole.NURSE && thread.assigned_role === 'NURSE_QUEUE') {
+                isStillAssignedToSameRole = true;
+            } else if (role === JanmasethuUserRole.DOCTOR && thread.assigned_role === 'DOCTOR_QUEUE') {
+                isStillAssignedToSameRole = true;
+            } else if (thread.assigned_role === role) {
+                isStillAssignedToSameRole = true;
+            }
+        }
+
         const isHumanLocked = thread.ownership === OwnershipType.HUMAN && thread.is_locked;
 
         if (isStillInRisk && (isStillAssignedToSameRole || isHumanLocked)) {
@@ -106,7 +118,13 @@ export class JanmasethuSlaWorker extends WorkerHost {
                 actor_id: 'SLA_SYSTEM',
                 actor_type: 'SYSTEM',
                 action: action,
-                payload: { previousAssignee: thread.assigned_user_id, previousRole: role, risk: category },
+                payload: {
+                    previousAssignee: thread.assigned_user_id,
+                    previousRole: role,
+                    risk: category,
+                    breachedAfterMs: job.opts?.delay || 0,
+                    jobTimestamp: job.timestamp
+                },
             });
 
             await this.repository.insertRoutingEvent({
@@ -114,6 +132,12 @@ export class JanmasethuSlaWorker extends WorkerHost {
                 actor_id: 'SLA_SYSTEM',
                 target_role: 'CRO',
                 reason: `ESCALATION_${action}`,
+                payload: {
+                    category,
+                    role,
+                    action,
+                    thread_version: thread.version
+                }
             });
 
             // REAL-TIME BROADCAST OF BREACH/ESCALATION

@@ -115,8 +115,10 @@ export class JanmasethuAssignmentService {
             return;
         }
 
-        // 3. Assign to the clinician with lowest workload
-        const bestClinician = available[0];
+        // 3. Assign to a candidate from the top-tier lowest workloads to mitigate back-to-back concurrency race conditions
+        const minWorkload = Math.min(...available.map(c => c.active_threads));
+        const topCandidates = available.filter(c => c.active_threads <= minWorkload + 1);
+        const bestClinician = topCandidates[Math.floor(Math.random() * topCandidates.length)];
 
         const targetRole = thread.status === 'red' ? JanmasethuRole.DOCTOR_QUEUE : JanmasethuRole.NURSE_QUEUE;
 

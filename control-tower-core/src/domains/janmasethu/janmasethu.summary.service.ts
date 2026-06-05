@@ -54,7 +54,7 @@ export class JanmasethuSummaryService {
             // 3. Robust Fallback (If SLM is down/not working as reported)
             this.logger.warn(`⚠️ Local SLM offline or failed. Using Clinical Rule-Based Fallback.`);
             summaryText = this.generateRuleBasedSummary(plainMessages);
-            structuredSymptoms = this.extractSymptoms(messages);
+            structuredSymptoms = this.extractSymptoms(plainMessages); // FIX: pass decrypted plainMessages
         }
 
         const summary: JanmasethuSummary = {
@@ -92,13 +92,18 @@ export class JanmasethuSummaryService {
             SUMMARY:
         `;
 
+        const slmTimeout = this.config.get<number>('SLM_TIMEOUT') ?? 10000; // Inject dynamic configured timeout bounds
+
         const response = await axios.post(this.slmUrl, {
             model: 'phi3:mini', // Lightweight clinical-safe default
             prompt: prompt,
             stream: false
-        }, { timeout: 5000 }); // Fast fail if SLM is stuck
+        }, { timeout: slmTimeout });
 
-        return response.data?.response || response.data?.choices?.[0]?.text;
+        return response.data?.response || // Ollama Completion format
+               response.data?.message?.content || // Ollama/OpenAI Chat format
+               response.data?.choices?.[0]?.message?.content || // OpenAI Chat format
+               response.data?.choices?.[0]?.text; // OpenAI legacy / Llama.cpp Completion format
     }
 
     /**

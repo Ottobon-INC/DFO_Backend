@@ -4,6 +4,7 @@ import { AnalyticsService } from './analytics.service';
 import { AnalyticsWorker } from './analytics.worker';
 import { AnalyticsController } from './analytics.controller';
 import { JanmasethuRbacService } from '../janmasethu.rbac';
+import { JanmasethuScopePolicy } from '../JanmasethuScopePolicy';
 import { JanmasethuAuditService } from '../janmasethu.audit.service';
 import { JanmasethuRepository } from '../janmasethu.repository';
 
@@ -15,6 +16,7 @@ import { JanmasethuRepository } from '../janmasethu.repository';
         AnalyticsService,
         AnalyticsWorker,
         JanmasethuRbacService,
+        JanmasethuScopePolicy,
         JanmasethuAuditService,
         JanmasethuRepository,
     ],

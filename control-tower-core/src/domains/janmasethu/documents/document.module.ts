@@ -8,6 +8,7 @@ import { DocumentWorker } from './document.worker';
 import { DocumentController } from './document.controller';
 import { JanmasethuEncryptionService } from '../utils/encryption.service';
 import { JanmasethuRbacService } from '../janmasethu.rbac';
+import { JanmasethuScopePolicy } from '../JanmasethuScopePolicy';
 import { JanmasethuAuditService } from '../janmasethu.audit.service';
 import { JanmasethuRepository } from '../janmasethu.repository';
 import { TemplateService } from './template.service';
@@ -25,6 +26,7 @@ import { PdfService } from './pdf.service';
         DocumentWorker,
         JanmasethuEncryptionService,
         JanmasethuRbacService,
+        JanmasethuScopePolicy,
         JanmasethuAuditService,
         JanmasethuRepository,
         TemplateService,

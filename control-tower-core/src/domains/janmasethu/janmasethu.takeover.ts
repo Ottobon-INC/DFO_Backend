@@ -31,6 +31,9 @@ export class JanmasethuTakeoverService {
             throw new ForbiddenException(`You must be assigned to this ${thread.status} thread before taking control.`);
         }
 
+        // Cancel previous SLA timer before starting takeover locking to avoid duplicate breach alerts
+        await this.slaWorker.cancelSla(threadId);
+
         // Takeover Logic with AI Suppression & Lock (ownership=HUMAN, is_locked=true)
         // Hardening: Enforce is_locked = false at the DB level for atomic safety
         await this.repository.updateThreadAtomic(threadId, thread.version, {
