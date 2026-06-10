@@ -8,8 +8,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - SUPABASE_URL=https://vhedpucowbjabgiklyea.supabase.co
-      - SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoZWRwdWNvd2JqYWJnaWtseWVhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTk4OTQzNywiZXhwIjoyMDg3NTY1NDM3fQ._RBmUFpQgwSrTOnuB6A9w_W4jaD80Seaqd8ydV1tIk8
+      - SUPABASE_URL=${SUPABASE_URL:-https://dummy.supabase.co}
+      - SUPABASE_KEY=${SUPABASE_KEY:-dummy-key}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:

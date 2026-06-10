@@ -2,8 +2,32 @@ const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
 
-const supabaseUrl = 'https://vhedpucowbjabgiklyea.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoZWRwdWNvd2JqYWJnaWtseWVhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTk4OTQzNywiZXhwIjoyMDg3NTY1NDM3fQ._RBmUFpQgwSrTOnuB6A9w_W4jaD80Seaqd8ydV1tIk8';
+// Load environment variables manually if they exist, otherwise use process.env
+let supabaseUrl = process.env.SUPABASE_URL;
+let supabaseKey = process.env.SUPABASE_KEY;
+
+try {
+    const envPath = path.join(__dirname, '.env', 'development.env');
+    if (fs.existsSync(envPath)) {
+        const envContent = fs.readFileSync(envPath, 'utf8');
+        envContent.split('\n').forEach(line => {
+            const parts = line.split('=');
+            if (parts.length === 2) {
+                const key = parts[0].trim();
+                const value = parts[1].trim();
+                if (key === 'SUPABASE_URL') supabaseUrl = value;
+                if (key === 'SUPABASE_KEY') supabaseKey = value;
+            }
+        });
+    }
+} catch (e) {
+    console.warn('Failed to load local env file, using process.env');
+}
+
+if (!supabaseUrl || !supabaseKey) {
+    supabaseUrl = supabaseUrl || 'https://dummy.supabase.co';
+    supabaseKey = supabaseKey || 'dummy-key';
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
