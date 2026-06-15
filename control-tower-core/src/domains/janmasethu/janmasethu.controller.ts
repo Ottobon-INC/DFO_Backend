@@ -23,7 +23,7 @@ import { JanmasethuEncryptionService } from './utils/encryption.service';
 import { JanmasethuRbacService } from './janmasethu.rbac';
 import { DocumentService } from './documents/document.service';
 import { ClinicalIntelligenceService } from './clinical-intelligence/clinical-intelligence.service';
-import { JANMASETHU_DOMAIN, JanmasethuUserRole, JanmasethuUserContext, JanmasethuPermission } from './janmasethu.types';
+import { JANMASETHU_DOMAIN, JanmasethuUserRole, JanmasethuUserContext, JanmasethuPermission, JanmasethuRole } from './janmasethu.types';
 import { JourneyStage, ConsultationStatus } from './dfo.types';
 import {
     SyncPatientDto, UpdateJourneyDto, BookAppointmentDto,
@@ -31,6 +31,7 @@ import {
 } from './dto/dfo.dto';
 
 import { JanmasethuResponseInterceptor } from './utils/response.interceptor';
+import { ThreadStatus, OwnershipType } from '../../types';
 
 @Controller('janmasethu')
 @UseGuards(JwtAuthGuard)
@@ -248,6 +249,42 @@ export class JanmasethuController {
         const user = this.getUserContext(req);
         await this.takeoverService.takeControl(threadId, user);
         return { status: 'controlled', threadId };
+    }
+
+    @Post('escalate/:id')
+    async escalateThread(
+        @Param('id') threadId: string,
+        @Body() body: { targetStatus: 'red' | 'yellow'; assignedUserId?: string },
+        @Request() req: any
+    ) {
+        const ctx = this.getUserContext(req);
+        if (ctx.role !== JanmasethuUserRole.CRO) {
+            throw new UnauthorizedException('Only CROs can escalate threads');
+        }
+
+        const thread = await this.repository.findThreadById(threadId);
+        if (!thread) throw new BadRequestException('Thread not found');
+
+        const targetRole = body.targetStatus === 'red' ? JanmasethuRole.DOCTOR_QUEUE : JanmasethuRole.NURSE_QUEUE;
+        const targetStatusEnum = body.targetStatus === 'red' ? ThreadStatus.RED : ThreadStatus.YELLOW;
+
+        await this.repository.updateThreadAtomic(threadId, thread.version, {
+            status: targetStatusEnum,
+            assigned_role: targetRole,
+            assigned_user_id: body.assignedUserId || undefined,
+            ownership: OwnershipType.AI,
+            is_locked: false,
+        });
+
+        await this.repository.insertAuditLog({
+            thread_id: threadId,
+            actor_id: ctx.id,
+            actor_type: 'HUMAN',
+            event_type: 'THREAD_ESCALATED',
+            payload: { targetStatus: body.targetStatus, targetRole },
+        });
+
+        return { status: 'escalated', threadId, targetStatus: body.targetStatus };
     }
 
     @Post('refer/:id')

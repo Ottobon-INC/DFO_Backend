@@ -5,6 +5,7 @@ import { KernelModule } from './kernel/kernel.module';
 import { DatabaseModule } from './infrastructure/database.module';
 import { QueueModule } from './infrastructure/queue.module';
 import { JanmasethuModule } from './domains/janmasethu/janmasethu.module';
+import { ClinicsModule } from './domains/clinics/clinics.module';
 import { DebugController } from './api/debug.controller';
 import { ThreadController } from './api/thread.controller';
 import { HealthController } from './api/health.controller';
@@ -21,6 +22,7 @@ import configuration from './config/configuration';
     DatabaseModule,
     QueueModule,
     JanmasethuModule,
+    ClinicsModule,
     KernelModule, // Load without .register() to avoid the dynamic module masking bug
   ],
   controllers: [

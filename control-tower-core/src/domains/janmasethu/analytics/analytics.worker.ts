@@ -30,7 +30,16 @@ export class AnalyticsWorker extends WorkerHost implements OnModuleInit {
         this.logger.log('📅 Initializing Analytics Scheduler (60s cycle)...');
 
         // Remove existing jobs to avoid duplicates on restart
-        await this.analyticsQueue.obliterate({ force: true });
+        try {
+            await this.analyticsQueue.obliterate({ force: true });
+        } catch (err: any) {
+            this.logger.warn(`Could not obliterate queue: ${err.message}. Draining instead.`);
+            try {
+                await this.analyticsQueue.drain();
+            } catch (drainErr) {
+                // Ignore drain failures
+            }
+        }
 
         // Add recurring background job
         await this.analyticsQueue.add('REFRESH_DASHBOARD_ANALYTICS', {}, {
