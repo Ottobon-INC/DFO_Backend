@@ -57,18 +57,37 @@ export class AuthController {
             }
 
             const token = jwt.sign(
-                { sub: user.id, email: user.email, role: user.role, name: user.name },
+                { 
+                    sub: user.id, 
+                    email: user.email, 
+                    role: user.role, 
+                    name: user.name,
+                    clinic_id: user.clinic_id,
+                    is_super_admin: user.is_super_admin,
+                    is_clinic_admin: user.is_clinic_admin
+                },
                 this.jwtSecret,
                 { expiresIn: this.jwtExpiresIn },
             );
 
+            const userResponse = { 
+                id: user.id, 
+                name: user.name, 
+                email: user.email, 
+                role: user.role, 
+                clinic_id: user.clinic_id,
+                is_super_admin: user.is_super_admin,
+                is_clinic_admin: user.is_clinic_admin,
+                token 
+            };
+
             return {
                 success: true,
                 token,
-                user: { id: user.id, name: user.name, email: user.email, role: user.role, token },
+                user: userResponse,
                 data: {
                     token,
-                    user: { id: user.id, name: user.name, email: user.email, role: user.role, token },
+                    user: userResponse,
                 },
             };
         } catch (error: any) {

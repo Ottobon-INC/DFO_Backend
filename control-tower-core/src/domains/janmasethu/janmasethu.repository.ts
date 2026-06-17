@@ -286,7 +286,7 @@ export class JanmasethuRepository {
 
     async updateAppointment(id: string, dto: any): Promise<void> {
         const { error } = await this.supabase
-            .from('dfo_appointments')
+            .from('sakhi_clinic_appointments')
             .update(dto)
             .eq('id', id);
         if (error) throw error;
@@ -294,7 +294,7 @@ export class JanmasethuRepository {
 
     async findPastDueAppointments(now: Date): Promise<DFOAppointment[]> {
         const { data, error } = await this.supabase
-            .from('dfo_appointments')
+            .from('sakhi_clinic_appointments')
             .select('*')
             .eq('status', AppointmentStatus.SCHEDULED)
             .lt('appointment_date', now.toISOString());
@@ -403,34 +403,39 @@ export class JanmasethuRepository {
         event_type?: string;
         payload?: any
     }): Promise<void> {
-        // --- SCHEMA INDEPENDENT MAPPING ---
-        const finalAuditLog = {
-            thread_id: log.thread_id,
-            event_type: log.event_type || log.action || 'SYSTEM_EVENT',
-            payload: {
-                ...log.payload,
-                patient_id: log.patient_id,
-                actor_id: log.actor_id,
-                actor_type: log.actor_type,
-            },
-            created_at: new Date(),
-        };
-
         const { error } = await this.supabase
-            .from('audit_logs')
-            .insert([finalAuditLog]);
+            .from('sakhi_audit_logs')
+            .insert([{
+                actor_id: log.actor_id || 'system',
+                action: log.event_type || log.action || 'SYSTEM_EVENT',
+                entity_name: 'conversation_threads',
+                entity_id: log.thread_id,
+                new_values: {
+                    ...log.payload,
+                    patient_id: log.patient_id,
+                    actor_type: log.actor_type,
+                }
+            }]);
 
         if (error) throw error;
     }
 
     async findAuditLogs(limit: number = 100): Promise<any[]> {
         const { data, error } = await this.supabase
-            .from('audit_logs')
+            .from('sakhi_audit_logs')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(limit);
         if (error) throw error;
-        return data;
+        return data.map((log: any) => ({
+            id: log.id,
+            thread_id: log.entity_id,
+            actor_id: log.actor_id,
+            actor_type: log.new_values?.actor_type || 'SYSTEM',
+            action: log.action,
+            payload: log.new_values,
+            created_at: log.created_at
+        }));
     }
 
     async updateConsultation(id: string, updates: Partial<DFOConsultation>): Promise<void> {

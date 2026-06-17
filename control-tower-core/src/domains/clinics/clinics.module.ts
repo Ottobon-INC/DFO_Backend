@@ -18,6 +18,8 @@ import { InternalAssistantController } from './controllers/internal-assistant.co
 import { KnowledgeController } from './controllers/knowledge.controller';
 import { LeadsController } from './controllers/leads.controller';
 import { PatientsController } from './controllers/patients.controller';
+import { UsersController } from './controllers/users.controller';
+import { SuperAdminController } from './controllers/super-admin.controller';
 
 @Module({
     imports: [ConfigModule],
@@ -36,6 +38,8 @@ import { PatientsController } from './controllers/patients.controller';
         KnowledgeController,
         LeadsController,
         PatientsController,
+        UsersController,
+        SuperAdminController,
     ],
     exports: [
         ClinicsSupabaseService,

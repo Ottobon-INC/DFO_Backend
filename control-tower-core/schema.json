@@ -1,0 +1,1166 @@
+{
+  "clinics": {
+    "required": [
+      "id",
+      "name",
+      "is_active",
+      "created_at",
+      "updated_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "name": {
+        "format": "text",
+        "type": "string"
+      },
+      "address": {
+        "format": "text",
+        "type": "string"
+      },
+      "contact_phone": {
+        "format": "text",
+        "type": "string"
+      },
+      "contact_email": {
+        "format": "text",
+        "type": "string"
+      },
+      "is_active": {
+        "default": true,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "patient_consents": {
+    "required": [
+      "id",
+      "patient_id",
+      "preferences_encrypted",
+      "updated_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_patients.id`.<fk table='sakhi_clinic_patients' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "preferences_encrypted": {
+        "format": "text",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "conversation_threads": {
+    "required": [
+      "id",
+      "domain",
+      "user_id",
+      "channel",
+      "status",
+      "ownership",
+      "is_locked",
+      "version",
+      "created_at",
+      "updated_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "domain": {
+        "format": "text",
+        "type": "string"
+      },
+      "user_id": {
+        "format": "text",
+        "type": "string"
+      },
+      "channel": {
+        "format": "text",
+        "type": "string"
+      },
+      "status": {
+        "default": "green",
+        "format": "text",
+        "type": "string"
+      },
+      "ownership": {
+        "default": "AI",
+        "format": "text",
+        "type": "string"
+      },
+      "assigned_role": {
+        "format": "text",
+        "type": "string"
+      },
+      "assigned_user_id": {
+        "format": "text",
+        "type": "string"
+      },
+      "is_locked": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "version": {
+        "default": 1,
+        "format": "integer",
+        "type": "integer"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "clinical_analyses": {
+    "required": [
+      "id",
+      "patient_conversation",
+      "structured_analysis",
+      "urgency_level",
+      "metadata",
+      "created_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_conversation": {
+        "format": "text",
+        "type": "string"
+      },
+      "structured_analysis": {
+        "format": "text",
+        "type": "string"
+      },
+      "urgency_level": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "metadata": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sentiment_evaluations": {
+    "required": [
+      "id",
+      "thread_id",
+      "score",
+      "label",
+      "provider",
+      "created_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "thread_id": {
+        "description": "Note:\nThis is a Foreign Key to `conversation_threads.id`.<fk table='conversation_threads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "message_id": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "score": {
+        "format": "numeric",
+        "type": "number"
+      },
+      "label": {
+        "format": "text",
+        "type": "string"
+      },
+      "provider": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_clinic_patients": {
+    "required": [
+      "id",
+      "uhid",
+      "name",
+      "mobile",
+      "registration_date",
+      "created_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "uhid": {
+        "format": "text",
+        "type": "string"
+      },
+      "lead_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_leads.id`.<fk table='sakhi_clinic_leads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "name": {
+        "format": "text",
+        "type": "string"
+      },
+      "mobile": {
+        "format": "text",
+        "type": "string"
+      },
+      "email": {
+        "format": "text",
+        "type": "string"
+      },
+      "gender": {
+        "default": "Female",
+        "format": "text",
+        "type": "string"
+      },
+      "dob": {
+        "format": "date",
+        "type": "string"
+      },
+      "age": {
+        "format": "integer",
+        "type": "integer"
+      },
+      "marital_status": {
+        "default": "Married",
+        "format": "text",
+        "type": "string"
+      },
+      "blood_group": {
+        "format": "text",
+        "type": "string"
+      },
+      "aadhar": {
+        "format": "text",
+        "type": "string"
+      },
+      "house": {
+        "format": "text",
+        "type": "string"
+      },
+      "street": {
+        "format": "text",
+        "type": "string"
+      },
+      "area": {
+        "format": "text",
+        "type": "string"
+      },
+      "city": {
+        "format": "text",
+        "type": "string"
+      },
+      "district": {
+        "format": "text",
+        "type": "string"
+      },
+      "state": {
+        "format": "text",
+        "type": "string"
+      },
+      "postal_code": {
+        "format": "text",
+        "type": "string"
+      },
+      "emergency_contact_name": {
+        "format": "text",
+        "type": "string"
+      },
+      "emergency_contact_phone": {
+        "format": "text",
+        "type": "string"
+      },
+      "emergency_contact_relation": {
+        "format": "text",
+        "type": "string"
+      },
+      "assigned_doctor_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_users.id`.<fk table='sakhi_clinic_users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "referral_doctor": {
+        "format": "text",
+        "type": "string"
+      },
+      "hospital_address": {
+        "format": "text",
+        "type": "string"
+      },
+      "registration_date": {
+        "default": "CURRENT_DATE",
+        "format": "date",
+        "type": "string"
+      },
+      "status": {
+        "default": "Active",
+        "format": "text",
+        "type": "string"
+      },
+      "relation": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_clinic_patient_notes": {
+    "required": [
+      "id",
+      "patient_id",
+      "note",
+      "created_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_patients.id`.<fk table='sakhi_clinic_patients' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "author_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_users.id`.<fk table='sakhi_clinic_users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "note": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_clinic_leads": {
+    "required": [
+      "id",
+      "created_at",
+      "name",
+      "phone",
+      "status",
+      "date_added",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "name": {
+        "format": "text",
+        "type": "string"
+      },
+      "phone": {
+        "format": "text",
+        "type": "string"
+      },
+      "status": {
+        "default": "New Inquiry",
+        "format": "text",
+        "type": "string"
+      },
+      "date_added": {
+        "default": "CURRENT_DATE",
+        "format": "date",
+        "type": "string"
+      },
+      "age": {
+        "format": "text",
+        "type": "string"
+      },
+      "gender": {
+        "format": "text",
+        "type": "string"
+      },
+      "source": {
+        "format": "text",
+        "type": "string"
+      },
+      "inquiry": {
+        "format": "text",
+        "type": "string"
+      },
+      "problem": {
+        "format": "text",
+        "type": "string"
+      },
+      "treatment_doctor": {
+        "format": "text",
+        "type": "string"
+      },
+      "treatment_suggested": {
+        "format": "text",
+        "type": "string"
+      },
+      "assigned_to_user_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_users.id`.<fk table='sakhi_clinic_users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "guardian_name": {
+        "format": "text",
+        "type": "string"
+      },
+      "guardian_age": {
+        "format": "text",
+        "type": "string"
+      },
+      "location": {
+        "format": "text",
+        "type": "string"
+      },
+      "alternate_phone": {
+        "format": "text",
+        "type": "string"
+      },
+      "referral_required": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "notes": {
+        "format": "text",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "conversation_messages": {
+    "required": [
+      "id",
+      "thread_id",
+      "sender_id",
+      "sender_type",
+      "content",
+      "created_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "thread_id": {
+        "description": "Note:\nThis is a Foreign Key to `conversation_threads.id`.<fk table='conversation_threads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "sender_id": {
+        "format": "text",
+        "type": "string"
+      },
+      "sender_type": {
+        "format": "text",
+        "type": "string"
+      },
+      "content": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_clinical_notes": {
+    "required": [
+      "id",
+      "patient_id",
+      "note",
+      "created_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_patients.id`.<fk table='sakhi_clinic_patients' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "author_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_users.id`.<fk table='sakhi_clinic_users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "note": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_clinic_users": {
+    "required": [
+      "id",
+      "name",
+      "email",
+      "role",
+      "password_hash",
+      "created_at",
+      "is_super_admin",
+      "is_clinic_admin"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "name": {
+        "format": "text",
+        "type": "string"
+      },
+      "email": {
+        "format": "text",
+        "type": "string"
+      },
+      "role": {
+        "format": "text",
+        "type": "string"
+      },
+      "password_hash": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "is_super_admin": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      },
+      "is_clinic_admin": {
+        "default": false,
+        "format": "boolean",
+        "type": "boolean"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_knowledge_hub": {
+    "required": [
+      "id",
+      "title",
+      "content",
+      "created_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "title": {
+        "format": "text",
+        "type": "string"
+      },
+      "content": {
+        "format": "text",
+        "type": "string"
+      },
+      "tags": {
+        "format": "text[]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "guardrail_evaluations": {
+    "required": [
+      "id",
+      "thread_id",
+      "triggered_rule",
+      "action",
+      "created_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "thread_id": {
+        "description": "Note:\nThis is a Foreign Key to `conversation_threads.id`.<fk table='conversation_threads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "content_snippet": {
+        "format": "text",
+        "type": "string"
+      },
+      "triggered_rule": {
+        "format": "text",
+        "type": "string"
+      },
+      "action": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "dfo_support_tickets": {
+    "required": [
+      "id",
+      "category",
+      "priority",
+      "status",
+      "source",
+      "created_at",
+      "updated_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "thread_id": {
+        "description": "Note:\nThis is a Foreign Key to `conversation_threads.id`.<fk table='conversation_threads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_leads.id`.<fk table='sakhi_clinic_leads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_phone": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_name": {
+        "format": "text",
+        "type": "string"
+      },
+      "category": {
+        "format": "text",
+        "type": "string"
+      },
+      "priority": {
+        "default": "LOW",
+        "format": "text",
+        "type": "string"
+      },
+      "status": {
+        "default": "OPEN",
+        "format": "text",
+        "type": "string"
+      },
+      "source": {
+        "default": "web",
+        "format": "text",
+        "type": "string"
+      },
+      "assigned_user_id": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "escalation_metadata": {
+        "format": "jsonb"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "updated_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_clinic_documents": {
+    "required": [
+      "id",
+      "patient_id",
+      "name",
+      "file_path",
+      "created_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_patients.id`.<fk table='sakhi_clinic_patients' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "name": {
+        "format": "text",
+        "type": "string"
+      },
+      "file_path": {
+        "format": "text",
+        "type": "string"
+      },
+      "file_size": {
+        "format": "integer",
+        "type": "integer"
+      },
+      "mime_type": {
+        "format": "text",
+        "type": "string"
+      },
+      "uploaded_by": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_users.id`.<fk table='sakhi_clinic_users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_audit_logs": {
+    "required": [
+      "id",
+      "action",
+      "created_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "actor_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_users.id`.<fk table='sakhi_clinic_users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "action": {
+        "format": "text",
+        "type": "string"
+      },
+      "entity_name": {
+        "format": "text",
+        "type": "string"
+      },
+      "entity_id": {
+        "format": "uuid",
+        "type": "string"
+      },
+      "old_values": {
+        "format": "jsonb"
+      },
+      "new_values": {
+        "format": "jsonb"
+      },
+      "ip_address": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "patient_vitals": {
+    "required": [
+      "id",
+      "patient_id",
+      "vital_type",
+      "value_encrypted",
+      "recorded_at",
+      "created_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_patients.id`.<fk table='sakhi_clinic_patients' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "vital_type": {
+        "format": "character varying",
+        "maxLength": 50,
+        "type": "string"
+      },
+      "value_encrypted": {
+        "format": "text",
+        "type": "string"
+      },
+      "recorded_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "routing_events": {
+    "required": [
+      "id",
+      "thread_id",
+      "actor_id",
+      "created_at"
+    ],
+    "properties": {
+      "id": {
+        "default": "extensions.uuid_generate_v4()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "thread_id": {
+        "description": "Note:\nThis is a Foreign Key to `conversation_threads.id`.<fk table='conversation_threads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "actor_id": {
+        "format": "text",
+        "type": "string"
+      },
+      "target_role": {
+        "format": "text",
+        "type": "string"
+      },
+      "reason": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  },
+  "sakhi_clinic_appointments": {
+    "required": [
+      "id",
+      "appointment_date",
+      "status",
+      "created_at",
+      "clinic_id"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "patient_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_patients.id`.<fk table='sakhi_clinic_patients' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "lead_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_leads.id`.<fk table='sakhi_clinic_leads' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "doctor_id": {
+        "description": "Note:\nThis is a Foreign Key to `sakhi_clinic_users.id`.<fk table='sakhi_clinic_users' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "appointment_date": {
+        "format": "date",
+        "type": "string"
+      },
+      "start_time": {
+        "format": "time without time zone",
+        "type": "string"
+      },
+      "end_time": {
+        "format": "time without time zone",
+        "type": "string"
+      },
+      "type": {
+        "format": "text",
+        "type": "string"
+      },
+      "status": {
+        "default": "Scheduled",
+        "format": "text",
+        "type": "string"
+      },
+      "visit_reason": {
+        "format": "text",
+        "type": "string"
+      },
+      "resource_id": {
+        "format": "text",
+        "type": "string"
+      },
+      "source": {
+        "format": "text",
+        "type": "string"
+      },
+      "referral_doctor": {
+        "format": "text",
+        "type": "string"
+      },
+      "referral_doctor_phone": {
+        "format": "text",
+        "type": "string"
+      },
+      "referral_notes": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_name_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "sex_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "doctor_name_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_phone_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_dob_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_email_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_address_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_postal_code_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_marital_status_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "patient_age_snapshot": {
+        "format": "text",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "timezone('utc'::text, now())",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "clinic_id": {
+        "description": "Note:\nThis is a Foreign Key to `clinics.id`.<fk table='clinics' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+}

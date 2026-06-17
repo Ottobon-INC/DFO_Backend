@@ -9,7 +9,7 @@ import { QueueModule } from './infrastructure/queue.module';
         ConfigModule.forRoot({
             isGlobal: true,
             load: [configuration],
-            envFilePath: ['.env/development.env'],
+            envFilePath: '.env',
         }),
         DatabaseModule,
         QueueModule,

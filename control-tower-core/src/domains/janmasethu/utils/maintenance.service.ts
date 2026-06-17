@@ -33,7 +33,8 @@ export class JanmasethuMaintenanceService {
             await this.cleanupQueues();
 
             // 3. Dependency-Safe Seeding (Transactional Flow)
-            await this.executeSafeSeeding();
+            // Skipped: Legacy dfo_ tables are deprecated and clinics domain handles this now
+            // await this.executeSafeSeeding();
 
             // 4. Analytics Pre-warm
             await this.prewarmAnalytics();

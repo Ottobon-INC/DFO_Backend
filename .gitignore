@@ -25,3 +25,9 @@ control-tower-core/print_other_steps.js
 control-tower-core/print_step.js
 control-tower-core/search_row.js
 
+# dotenv environment variable files
+.env
+.env/
+.env.*.local
+.env.local
+.env.*
