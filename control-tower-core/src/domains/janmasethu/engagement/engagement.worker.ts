@@ -6,6 +6,7 @@ import { JanmasethuDispatchService } from '../channel/janmasethu-dispatch.servic
 import { EngagementService } from './engagement.service';
 import { EngagementJobType } from './engagement.types';
 import { DFOPatient } from '../dfo.types';
+import { JanmasethuRepository } from '../janmasethu.repository';
 
 @Processor('engagement_queue')
 @Injectable()
@@ -15,7 +16,8 @@ export class EngagementWorker extends WorkerHost {
     constructor(
         @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
         private readonly dispatcher: JanmasethuDispatchService,
-        private readonly engagementService: EngagementService
+        private readonly engagementService: EngagementService,
+        private readonly repository: JanmasethuRepository
     ) { super(); }
 
     async process(job: Job<any, any, string>): Promise<any> {
@@ -25,46 +27,39 @@ export class EngagementWorker extends WorkerHost {
         try {
             // 1. Fetch Patient Profile & Preferences
             const { data: patient, error } = await this.supabase
-                .from('dfo_patients')
+                .from('sakhi_clinic_patients')
                 .select('*')
                 .eq('id', patient_id)
-                .single();
+                .maybeSingle();
 
             if (error || !patient) throw new Error(`Patient ${patient_id} not found.`);
 
-            // 2. Check Preferences (Opt-out)
-            const preferences = (patient as DFOPatient).engagement_preferences || { opt_out_all: false };
-            if (preferences.opt_out_all) {
-                this.logger.warn(`Patient ${patient_id} has opted out of all engagement.`);
-                return;
-            }
+            const dfoPatient: DFOPatient = {
+                id: patient.id,
+                full_name: patient.name,
+                phone_number: patient.mobile,
+                journey_stage: patient.status === 'Active' ? 'Active' : 'Inactive'
+            } as any;
 
             let messageContent = content || job.data.message;
 
-            // 3. Get Template Content (If content not already provided via direct PROACTIVE_MSG)
+            // 2. Process Template Variables if content is template-driven
             if (!messageContent && template_id) {
-                const { data: template } = await this.supabase
-                    .from('dfo_engagement_templates')
-                    .select('*')
-                    .eq('id', template_id)
-                    .single();
-
-                if (!template) throw new Error(`Template ${template_id} not found.`);
-
-                // 4. Process Template Variables
-                messageContent = await this.engagementService.processTemplate(template.content, patient as DFOPatient, variables);
+                // Use default message pattern since templates table is missing
+                const templateText = content || `Hi {{patient_name}}, we are following up on your journey.`;
+                messageContent = await this.engagementService.processTemplate(templateText, dfoPatient, variables);
             }
 
             if (!messageContent) throw new Error('No message content found for engagement job.');
 
-            // 5. Dispatch via Selected Channel
-            const channel = (preferences as any).preferred_channel || 'whatsapp';
-            const userId = channel === 'whatsapp' ? (patient as DFOPatient).phone_number : (patient as DFOPatient).id;
+            // 3. Dispatch via Selected Channel
+            const channel = 'whatsapp';
+            const userId = dfoPatient.phone_number;
 
             await this.dispatcher.dispatchResponse(channel, userId, messageContent);
 
-            // 6. Log Engagement
-            await this.supabase.from('dfo_engagement_logs').insert([{
+            // 4. Log Engagement via repository (in-memory)
+            await this.repository.insertEngagementLog({
                 patient_id,
                 template_id,
                 job_id: job.id,
@@ -72,7 +67,7 @@ export class EngagementWorker extends WorkerHost {
                 content: messageContent,
                 status: 'SENT',
                 sent_at: new Date()
-            }]);
+            });
 
             return { success: true, channel };
         } catch (err) {
@@ -92,34 +87,27 @@ export class ReminderWorker extends WorkerHost {
 
     constructor(
         @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
-        private readonly dispatcher: JanmasethuDispatchService
+        private readonly dispatcher: JanmasethuDispatchService,
+        private readonly engagementService: EngagementService
     ) { super(); }
 
     async process(job: Job<any>): Promise<any> {
         const { reminder_id, patient_id } = job.data;
         this.logger.log(`Processing reminder ${reminder_id} for patient ${patient_id}`);
 
-        const { data: reminder } = await this.supabase
-            .from('dfo_patient_reminders')
-            .select('*')
-            .eq('id', reminder_id)
-            .single();
-
+        const reminder = this.engagementService.getReminderFromMemory(reminder_id);
         if (!reminder || !reminder.is_active) return;
 
         const { data: patient } = await this.supabase
-            .from('dfo_patients')
+            .from('sakhi_clinic_patients')
             .select('*')
             .eq('id', patient_id)
-            .single();
+            .maybeSingle();
 
         if (!patient) return;
 
         // Dispatch
         const message = `⏰ Reminder: ${reminder.title}`;
-        await this.dispatcher.dispatchResponse('whatsapp', (patient as DFOPatient).phone_number, message);
-
-        // Update last sent
-        await this.supabase.from('dfo_patient_reminders').update({ last_sent_at: new Date() }).eq('id', reminder_id);
+        await this.dispatcher.dispatchResponse('whatsapp', patient.mobile, message);
     }
 }

@@ -23,7 +23,7 @@ export class AuditService {
         };
 
         const { error } = await this.supabase
-            .from('audit_logs')
+            .from('sakhi_audit_logs')
             .insert([dbLog]);
 
         if (error) {
@@ -33,7 +33,7 @@ export class AuditService {
 
     async getAll(): Promise<AuditLog[]> {
         const { data, error } = await this.supabase
-            .from('audit_logs')
+            .from('sakhi_audit_logs')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(100);

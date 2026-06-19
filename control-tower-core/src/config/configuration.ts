@@ -3,7 +3,7 @@ import { registerAs } from '@nestjs/config';
 export default registerAs('app', () => ({
     supabase: {
         url: process.env.SUPABASE_URL,
-        key: process.env.SUPABASE_KEY,
+        key: process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANOYN_KEY,
     },
     redis: {
         host: process.env.REDIS_HOST || 'localhost',

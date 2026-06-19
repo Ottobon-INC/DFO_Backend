@@ -13,6 +13,9 @@ import { JourneyStage, DFOPatient } from '../dfo.types';
 @Injectable()
 export class EngagementService {
     private readonly logger = new Logger(EngagementService.name);
+    
+    // In-memory collections to replace missing dfo_ engagement tables
+    private inMemoryReminders = new Map<string, any>();
 
     constructor(
         @InjectQueue('engagement_queue') private readonly engagementQueue: Queue,
@@ -27,22 +30,19 @@ export class EngagementService {
     async scheduleStagedMessage(patientId: string, week: number, stage: JourneyStage) {
         this.logger.log(`Scheduling staged message for patient ${patientId} at week ${week}`);
 
-        // Find applicable template
-        const { data: template } = await this.supabase
-            .from('dfo_engagement_templates')
-            .select('*')
-            .eq('journey_stage', stage)
-            .eq('trigger_type', 'STAGED')
-            .ilike('template_key', `%W${week}%`)
-            .single();
+        // Mock template content instead of querying dfo_engagement_templates
+        const mockTemplate = {
+            id: 'mock-template-staged',
+            content: `Hi {{patient_name}}, you are at week {{week}} of your journey (Stage: ${stage}). Let's stay healthy!`,
+            journey_stage: stage
+        };
 
-        if (template) {
-            await this.enqueueEngagementJob(patientId, EngagementJobType.STAGED_MSG, {
-                template_id: template.id,
-                week,
-                stage
-            });
-        }
+        await this.enqueueEngagementJob(patientId, EngagementJobType.STAGED_MSG, {
+            template_id: mockTemplate.id,
+            content: mockTemplate.content,
+            week,
+            stage
+        });
     }
 
     /**
@@ -52,13 +52,17 @@ export class EngagementService {
     async createReminder(reminder: Partial<PatientReminder>) {
         this.logger.log(`Creating reminder for patient ${reminder.patient_id}: ${reminder.title}`);
 
-        const { data, error } = await this.supabase
-            .from('dfo_patient_reminders')
-            .upsert([reminder])
-            .select()
-            .single();
+        const id = reminder.id || require('crypto').randomUUID();
+        const data = {
+            id,
+            patient_id: reminder.patient_id,
+            title: reminder.title,
+            schedule: reminder.schedule,
+            is_active: true,
+            created_at: new Date()
+        };
 
-        if (error) throw error;
+        this.inMemoryReminders.set(id, data);
 
         // Schedule BullMQ job with CRON or repeated pattern
         await this.reminderQueue.add(
@@ -82,19 +86,17 @@ export class EngagementService {
     async triggerEventEngagement(patientId: string, event: string, payload: any = {}) {
         this.logger.log(`Triggering event engagement: ${event} for patient ${patientId}`);
 
-        const { data: template } = await this.supabase
-            .from('dfo_engagement_templates')
-            .select('*')
-            .eq('template_key', event)
-            .single();
+        // Mock template instead of querying dfo_engagement_templates
+        const mockTemplate = {
+            id: 'mock-template-event',
+            content: `Hello {{patient_name}}, regarding ${event}: we are following up on your status.`
+        };
 
-        if (!template) return;
-
-        // Determine delay (e.g. 1 hour for high risk follow-up)
         const delay = payload.delay_ms || 0;
 
         await this.enqueueEngagementJob(patientId, EngagementJobType.FOLLOW_UP, {
-            template_id: template.id,
+            template_id: mockTemplate.id,
+            content: mockTemplate.content,
             ...payload
         }, delay);
     }
@@ -125,19 +127,18 @@ export class EngagementService {
      * Looks at engagement_preferences.opt_out_all flag.
      */
     public async checkPatientConsent(patientId: string): Promise<boolean> {
+        // Query sakhi_clinic_patients instead of dfo_patients
         const { data: patient } = await this.supabase
-            .from('dfo_patients')
-            .select('engagement_preferences')
+            .from('sakhi_clinic_patients')
+            .select('status')
             .eq('id', patientId)
-            .single();
+            .maybeSingle();
 
-        if (!patient || !patient.engagement_preferences) return true; // Default to allow if no prefs set
-
-        return !patient.engagement_preferences.opt_out_all;
+        if (!patient) return true; // Default to allow if no patient record found
+        return patient.status === 'Active';
     }
 
     private convertToCron(schedule: any): string {
-        // Simple daily cron for now: "0 0 09 * * *" (9 AM daily)
         const time = (schedule && schedule.times && schedule.times[0]) || '09:00';
         const [hour, minute] = time.split(':');
         return `0 ${minute} ${hour} * * *`;
@@ -149,7 +150,7 @@ export class EngagementService {
     async processTemplate(content: string, patient: DFOPatient, variables: any = {}): Promise<string> {
         let processed = content;
         const replacers = {
-            '{{patient_name}}': patient.full_name,
+            '{{patient_name}}': patient.full_name || 'Patient',
             '{{week}}': patient.pregnancy_stage?.toString() || 'N/A',
             ...variables
         };
@@ -159,5 +160,10 @@ export class EngagementService {
         }
 
         return processed;
+    }
+
+    // Accessor for the reminder worker
+    getReminderFromMemory(id: string) {
+        return this.inMemoryReminders.get(id);
     }
 }
