@@ -20,7 +20,10 @@ import { LeadsController } from './controllers/leads.controller';
 import { PatientsController } from './controllers/patients.controller';
 import { UsersController } from './controllers/users.controller';
 import { SuperAdminController } from './controllers/super-admin.controller';
-
+import { SuperAdminAuthController } from './controllers/super-admin-auth.controller';
+import { PatientAuthController } from './controllers/patient-auth.controller';
+import { PatientPortalController } from './controllers/patient-portal.controller';
+import { StaffController } from './controllers/staff.controller';
 @Module({
     imports: [ConfigModule],
     providers: [
@@ -40,6 +43,10 @@ import { SuperAdminController } from './controllers/super-admin.controller';
         PatientsController,
         UsersController,
         SuperAdminController,
+        SuperAdminAuthController,
+        PatientAuthController,
+        PatientPortalController,
+        StaffController,
     ],
     exports: [
         ClinicsSupabaseService,

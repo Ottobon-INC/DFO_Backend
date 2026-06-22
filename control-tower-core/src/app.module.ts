@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TerminusModule } from '@nestjs/terminus';
 import { KernelModule } from './kernel/kernel.module';
@@ -9,6 +10,7 @@ import { ClinicsModule } from './domains/clinics/clinics.module';
 import { DebugController } from './api/debug.controller';
 import { ThreadController } from './api/thread.controller';
 import { HealthController } from './api/health.controller';
+import { TenantInterceptor } from './infrastructure/interceptors/tenant.interceptor';
 import configuration from './config/configuration';
 
 @Module({
@@ -29,6 +31,12 @@ import configuration from './config/configuration';
     ThreadController,
     HealthController,
     DebugController
+  ],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: TenantInterceptor,
+    },
   ],
 })
 export class AppModule { }

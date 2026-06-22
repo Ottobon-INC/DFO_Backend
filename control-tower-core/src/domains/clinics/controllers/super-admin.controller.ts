@@ -1,114 +1,132 @@
-import { Controller, Post, Get, Body, Logger, HttpException, HttpStatus, Headers, Param } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
-import * as jwt from 'jsonwebtoken';
-import { ConfigService } from '@nestjs/config';
+import { SuperAdminGuard } from '../guards/super-admin.guard';
+import { CreateClinicDto } from '../dto/create-clinic.dto';
 
-@Controller('api/super-admin')
+@Controller('api/v1/superadmin')
+@UseGuards(SuperAdminGuard)
 export class SuperAdminController {
     private readonly logger = new Logger(SuperAdminController.name);
-    private readonly jwtSecret: string;
 
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
-        private readonly configService: ConfigService,
-    ) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
-    }
-
-    private verifyToken(authHeader?: string) {
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            throw new HttpException({ success: false, error: 'Unauthorized' }, HttpStatus.UNAUTHORIZED);
-        }
-        const token = authHeader.split(' ')[1];
-        try {
-            return jwt.verify(token, this.jwtSecret) as any;
-        } catch (error) {
-            throw new HttpException({ success: false, error: 'Invalid or expired token' }, HttpStatus.UNAUTHORIZED);
-        }
-    }
-
-    private ensureSuperAdmin(authHeader?: string) {
-        const decoded = this.verifyToken(authHeader);
-        if (!decoded.is_super_admin) {
-            throw new HttpException({ success: false, error: 'Access denied. Super Admin only.' }, HttpStatus.FORBIDDEN);
-        }
-        return decoded;
-    }
+    ) {}
 
     @Post('clinics')
-    async createClinic(@Headers('authorization') authHeader: string, @Body() body: any) {
-        this.ensureSuperAdmin(authHeader);
-
-        const { name, address, contact_phone, contact_email } = body;
-        if (!name) {
-            throw new HttpException({ success: false, error: 'Clinic name is required' }, HttpStatus.BAD_REQUEST);
-        }
-
+    async createClinic(@Body() body: CreateClinicDto) {
+        const { clinic_name, owner_name, owner_email, owner_role } = body;
         const supabase = this.supabaseService.getClient();
+
         try {
-            const { data, error } = await supabase
+            // Step 1: Insert Clinic
+            const { data: clinic, error: clinicError } = await supabase
                 .from('clinics')
-                .insert([{ name, address, contact_phone, contact_email }])
+                .insert([{ name: clinic_name }])
                 .select()
                 .single();
 
-            if (error) throw error;
-            return { success: true, data };
+            if (clinicError) throw clinicError;
+
+            // Step 2: Insert Genesis Admin (Owner)
+            // Generate a random temporary password or leave it to be set later via email link
+            let password_hash = 'Temporary123!';
+            try {
+                const passwordHash = require('password-hash');
+                password_hash = passwordHash.generate(password_hash);
+            } catch {}
+
+            const adminPayload = {
+                name: owner_name,
+                email: owner_email,
+                password_hash,
+                role: owner_role || 'Doctor', // Use the user-provided role
+                clinic_id: clinic.id,
+                is_clinic_admin: true,
+                is_super_admin: false,
+            };
+
+            const { data: adminUser, error: adminError } = await supabase
+                .from('sakhi_clinic_users')
+                .insert([adminPayload])
+                .select('id, name, email, role, clinic_id, is_clinic_admin')
+                .single();
+
+            if (adminError) {
+                // If it fails, log it, but the clinic was already created.
+                this.logger.error('Failed to create genesis admin, but clinic was created', adminError);
+                if (adminError.code === '23505') {
+                   throw new HttpException({ success: false, error: 'Clinic created, but owner email already exists' }, HttpStatus.CONFLICT);
+                }
+                throw adminError;
+            }
+
+            return { 
+                success: true, 
+                message: 'Clinic and Admin created successfully',
+                data: {
+                    clinic,
+                    admin: adminUser
+                } 
+            };
         } catch (error: any) {
-            this.logger.error('POST /api/super-admin/clinics', error);
+            if (error instanceof HttpException) throw error;
+            this.logger.error('POST /api/v1/superadmin/clinics', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
-    @Post('clinics/:clinicId/admin')
-    async createClinicGenesisAdmin(@Headers('authorization') authHeader: string, @Body() body: any, @Param('clinicId') clinicId: string) {
-        this.ensureSuperAdmin(authHeader);
-
-        const { name, email, password, role } = body;
-        if (!name || !email || !password || !role) {
-            throw new HttpException({ success: false, error: 'Name, email, password, and role are required' }, HttpStatus.BAD_REQUEST);
-        }
-
-        const allowedRoles = ['DOCTOR', 'CRO']; // Usually the clinic admin is a Doctor or CRO
-        if (!allowedRoles.includes(role)) {
-            throw new HttpException({ success: false, error: 'Genesis admin role must be DOCTOR or CRO' }, HttpStatus.BAD_REQUEST);
-        }
-
+    @Get('clinics')
+    async getClinics() {
         const supabase = this.supabaseService.getClient();
         try {
-            // Verify clinic exists
-            const { data: clinic, error: clinicError } = await supabase.from('clinics').select('id').eq('id', clinicId).single();
-            if (clinicError || !clinic) {
-                throw new HttpException({ success: false, error: 'Clinic not found' }, HttpStatus.NOT_FOUND);
-            }
+            const { data: clinics, error } = await supabase
+                .from('clinics')
+                .select('*')
+                .order('created_at', { ascending: false });
 
-            let password_hash = password;
-            try {
-                const passwordHash = require('password-hash');
-                password_hash = passwordHash.generate(password);
-            } catch {}
+            if (error) throw error;
+            
+            const { data: users, error: usersError } = await supabase
+                .from('sakhi_clinic_users')
+                .select('clinic_id, id');
+            
+            if (usersError) throw usersError;
 
-            const payload = {
-                name,
-                email,
-                password_hash,
-                role,
-                clinic_id: clinicId,
-                is_clinic_admin: true, // This is the genesis admin
-                is_super_admin: false,
-            };
+            const clinicsWithCounts = (clinics || []).map(clinic => ({
+                ...clinic,
+                users_count: (users || []).filter((u: any) => u.clinic_id === clinic.id).length
+            }));
 
-            const { data, error } = await supabase.from('sakhi_clinic_users').insert([payload]).select('id, name, email, role, clinic_id, is_clinic_admin').single();
-
-            if (error) {
-                if (error.code === '23505') throw new HttpException({ success: false, error: 'Email already exists' }, HttpStatus.CONFLICT);
-                throw error;
-            }
-
-            return { success: true, data };
+            return { success: true, data: clinicsWithCounts };
         } catch (error: any) {
-            if (error instanceof HttpException) throw error;
-            this.logger.error('POST /api/super-admin/clinics/:id/admin', error);
+            this.logger.error('GET /api/v1/superadmin/clinics', error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete('clinics/:id')
+    async deleteClinic(@Param('id') id: string) {
+        const supabase = this.supabaseService.getClient();
+        try {
+            // 1. Delete all users belonging to this clinic
+            const { error: usersError } = await supabase
+                .from('sakhi_clinic_users')
+                .delete()
+                .eq('clinic_id', id);
+            
+            if (usersError) throw usersError;
+
+            // 2. Delete the clinic
+            const { error: clinicError } = await supabase
+                .from('clinics')
+                .delete()
+                .eq('id', id);
+
+            if (clinicError) throw clinicError;
+
+            return { success: true, message: 'Clinic permanently deleted' };
+        } catch (error: any) {
+            this.logger.error(`DELETE /api/v1/superadmin/clinics/${id}`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
