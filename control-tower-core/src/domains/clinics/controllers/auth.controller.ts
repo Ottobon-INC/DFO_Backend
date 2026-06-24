@@ -51,7 +51,8 @@ export class AuthController {
             if (!user) {
                 const devUsers = [
                     { id: 'dev-admin-id', email: 'admin@medcyivf.com', password_hash: 'password123', name: 'Admin User', role: 'admin' },
-                    { id: 'dev-doctor-id', email: 'doctor@medcyivf.com', password_hash: 'password123', name: 'Dr. Sireesha Rani', role: 'doctor' },
+                    { id: 'dev-doctor-id', email: 'doctor@medcyivf.com', password_hash: 'password123', name: 'Dr. Ragini', role: 'doctor' },
+                    { id: 'dev-doctor-ragini', email: 'dr.ragini@medcy.com', password_hash: 'password123', name: 'Dr. Ragini', role: 'doctor' },
                     { id: 'dev-frontdesk-id', email: 'frontdesk@medcyivf.com', password_hash: 'password123', name: 'Front Desk User', role: 'frontdesk' },
                     { id: 'dev-cro-id', email: 'cro@medcyivf.com', password_hash: 'password123', name: 'CRO User', role: 'cro' },
                     { id: 'dev-nurse-id', email: 'nurse@medcyivf.com', password_hash: 'password123', name: 'Nurse User', role: 'nurse' }
@@ -90,12 +91,14 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
+            const displayName = user.name || (user.email ? user.email.split('@')[0].split('.')[0].charAt(0).toUpperCase() + user.email.split('@')[0].split('.')[0].slice(1) : 'User');
+
             const token = jwt.sign(
                 { 
                     sub: user.id, 
                     email: user.email, 
                     role: user.role, 
-                    name: user.name,
+                    name: displayName,
                     clinic_id: user.clinic_id,
                     is_super_admin: user.is_super_admin,
                     is_clinic_admin: user.is_clinic_admin
@@ -106,7 +109,7 @@ export class AuthController {
 
             const userResponse = { 
                 id: user.id, 
-                name: user.name, 
+                name: displayName, 
                 email: user.email, 
                 role: user.role, 
                 clinic_id: user.clinic_id,

@@ -16,16 +16,16 @@ envContent.split('\n').forEach(line => {
 });
 
 const supabaseUrl = env.SUPABASE_URL;
-const anonKey = env.SUPABASE_ANOYN_KEY;
+const anonKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANOYN_KEY;
 
 const pwd = passwordHash.generate('password123');
 
 const users = [
-    { email: 'admin@medcyivf.com', password_hash: pwd, name: 'Admin User', role: 'admin' },
-    { email: 'doctor@medcyivf.com', password_hash: pwd, name: 'Dr. B. Sireesha Rani', role: 'doctor' },
-    { email: 'frontdesk@medcyivf.com', password_hash: pwd, name: 'Front Desk User', role: 'frontdesk' },
-    { email: 'cro@medcyivf.com', password_hash: pwd, name: 'CRO User', role: 'cro' },
-    { email: 'nurse@medcyivf.com', password_hash: pwd, name: 'Nurse User', role: 'nurse' },
+    { email: 'admin@medcyivf.com', password_hash: pwd, name: 'Admin User', role: 'Admin' },
+    { email: 'doctor@medcyivf.com', password_hash: pwd, name: 'Dr. B. Sireesha Rani', role: 'Doctor' },
+    { email: 'frontdesk@medcyivf.com', password_hash: pwd, name: 'Front Desk User', role: 'Receptionist' },
+    { email: 'cro@medcyivf.com', password_hash: pwd, name: 'CRO User', role: 'CRO' },
+    { email: 'nurse@medcyivf.com', password_hash: pwd, name: 'Nurse User', role: 'Nurse' },
 ];
 
 async function seedViaRestApi() {

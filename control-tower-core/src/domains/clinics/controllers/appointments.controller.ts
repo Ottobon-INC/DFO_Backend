@@ -68,10 +68,16 @@ export class AppointmentsController {
         try {
             const { data, error } = await supabase
                 .from('sakhi_clinic_users')
-                .select('id, name, email, role')
+                .select('id, email, role')
                 .eq('role', 'DOCTOR');
             if (error) throw error;
-            return { success: true, data };
+            const mapped = (data || []).map(u => ({
+                id: u.id,
+                email: u.email,
+                role: u.role,
+                name: u.email ? u.email.split('@')[0].split('.')[0].charAt(0).toUpperCase() + u.email.split('@')[0].split('.')[0].slice(1) : 'Doctor'
+            }));
+            return { success: true, data: mapped };
         } catch (error: any) {
             this.logger.error('GET /api/appointments/doctors', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -173,9 +179,11 @@ export class AppointmentsController {
 
             if (doctor_id && !doctorNameSnapshot) {
                 const { data: doctorRow, error: doctorNameError } = await supabase
-                    .from('sakhi_clinic_users').select('name').eq('id', doctor_id).maybeSingle();
+                    .from('sakhi_clinic_users').select('email').eq('id', doctor_id).maybeSingle();
                 if (doctorNameError && doctorNameError.code !== 'PGRST116') throw doctorNameError;
-                doctorNameSnapshot = doctorRow?.name ?? doctorNameSnapshot;
+                if (doctorRow?.email) {
+                    doctorNameSnapshot = doctorRow.email.split('@')[0].split('.')[0].charAt(0).toUpperCase() + doctorRow.email.split('@')[0].split('.')[0].slice(1);
+                }
             }
 
             const payload = this.utils.sanitizePayload({

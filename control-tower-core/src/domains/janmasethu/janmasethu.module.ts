@@ -48,6 +48,10 @@ import { ConsentModule } from './consent/consent.module';
 import { JanmasethuRepositoryModule } from './janmasethu-repository.module';
 import { SupportEngagementModule } from './support-engagement/support-engagement.module';
 
+import { ThreadOperationsController } from './thread-operations.controller';
+import { ThreadOperationsRepository } from './thread-operations.repository';
+import { PiiDecrypterService } from './pii-decrypter.service';
+
 @Module({
     imports: [
         BullModule.registerQueue(
@@ -94,12 +98,15 @@ import { SupportEngagementModule } from './support-engagement/support-engagement
         JanmasethuRbacService,
         EmergencyHotlineService,
         JanmasethuMaintenanceService,
+        PiiDecrypterService,
+        ThreadOperationsRepository,
     ],
     controllers: [
         JanmasethuController,
         JanmasethuChannelController,
         RealtimeEventsController,
         JanmasethuHealthController,
+        ThreadOperationsController,
     ],
     exports: [
         JanmasethuHandler,

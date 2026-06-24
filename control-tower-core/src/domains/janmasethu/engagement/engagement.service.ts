@@ -20,7 +20,8 @@ export class EngagementService {
     constructor(
         @InjectQueue('engagement_queue') private readonly engagementQueue: Queue,
         @InjectQueue('reminder_queue') private readonly reminderQueue: Queue,
-        @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient
+        @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
+        @Inject('ORG_SUPABASE_CLIENT') private readonly orgSupabase: SupabaseClient
     ) { }
 
     /**
@@ -128,7 +129,7 @@ export class EngagementService {
      */
     public async checkPatientConsent(patientId: string): Promise<boolean> {
         // Query sakhi_clinic_patients instead of dfo_patients
-        const { data: patient } = await this.supabase
+        const { data: patient } = await this.orgSupabase
             .from('sakhi_clinic_patients')
             .select('status')
             .eq('id', patientId)

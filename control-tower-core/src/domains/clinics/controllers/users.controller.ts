@@ -43,11 +43,19 @@ export class UsersController {
         try {
             const { data, error } = await supabase
                 .from('sakhi_clinic_users')
-                .select('id, name, email, role, is_clinic_admin, created_at')
+                .select('id, email, role, is_clinic_admin, created_at')
                 .eq('clinic_id', decoded.clinic_id);
 
             if (error) throw error;
-            return { success: true, data };
+            const mapped = (data || []).map(u => ({
+                id: u.id,
+                email: u.email,
+                role: u.role,
+                is_clinic_admin: u.is_clinic_admin,
+                created_at: u.created_at,
+                name: u.email ? u.email.split('@')[0].split('.')[0].charAt(0).toUpperCase() + u.email.split('@')[0].split('.')[0].slice(1) : 'User'
+            }));
+            return { success: true, data: mapped };
         } catch (error: any) {
             this.logger.error('GET /api/clinic/users', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -91,7 +99,6 @@ export class UsersController {
 
             // Force the new user to be in the same clinic as the admin who is creating them
             const payload = {
-                name,
                 email,
                 password_hash,
                 role,
@@ -100,7 +107,7 @@ export class UsersController {
                 is_super_admin: false,
             };
 
-            const { data, error } = await supabase.from('sakhi_clinic_users').insert([payload]).select('id, name, email, role, clinic_id').single();
+            const { data, error } = await supabase.from('sakhi_clinic_users').insert([payload]).select('id, email, role, clinic_id').single();
 
             if (error) {
                 if (error.code === '23505') { // Unique violation
@@ -189,12 +196,17 @@ export class UsersController {
                 .from('sakhi_clinic_users')
                 .update(updatePayload)
                 .eq('id', id)
-                .select('id, name, email, role, clinic_id')
+                .select('id, email, role, clinic_id')
                 .single();
 
             if (error) throw error;
 
-            return { success: true, data };
+            const mapped = data ? {
+                ...data,
+                name: data.email ? data.email.split('@')[0].split('.')[0].charAt(0).toUpperCase() + data.email.split('@')[0].split('.')[0].slice(1) : 'User'
+            } : null;
+
+            return { success: true, data: mapped };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`PATCH /api/clinic/users/${id}`, error);

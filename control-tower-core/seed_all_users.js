@@ -11,7 +11,7 @@ envContent.split('\n').forEach(line => {
     if (parts.length >= 2) env[parts[0].trim()] = parts.slice(1).join('=').trim();
 });
 
-const key = env.SUPABASE_ANOYN_KEY || env.SUPABASE_KEY;
+const key = env.SUPABASE_SERVICE_ROLE_KEY;
 const supabase = createClient(env.SUPABASE_URL, key);
 
 async function seed() {

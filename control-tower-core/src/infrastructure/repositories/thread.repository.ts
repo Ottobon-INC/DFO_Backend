@@ -71,10 +71,15 @@ export class ThreadRepository {
     }
 
     async findByStatus(status: string): Promise<Thread[]> {
+        let statusList = [status];
+        if (status === 'red') statusList = ['red', 'DOCTOR_ASSIGNED'];
+        else if (status === 'yellow') statusList = ['yellow', 'NURSE_ASSIGNED'];
+        else if (status === 'green') statusList = ['green', 'AI_ACTIVE'];
+
         const { data, error } = await this.supabase
             .from('conversation_threads')
             .select('*')
-            .eq('status', status)
+            .in('status', statusList)
             .order('updated_at', { ascending: false });
 
         if (error) throw error;

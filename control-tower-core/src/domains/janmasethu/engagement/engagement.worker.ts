@@ -15,6 +15,7 @@ export class EngagementWorker extends WorkerHost {
 
     constructor(
         @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
+        @Inject('ORG_SUPABASE_CLIENT') private readonly orgSupabase: SupabaseClient,
         private readonly dispatcher: JanmasethuDispatchService,
         private readonly engagementService: EngagementService,
         private readonly repository: JanmasethuRepository
@@ -26,7 +27,7 @@ export class EngagementWorker extends WorkerHost {
 
         try {
             // 1. Fetch Patient Profile & Preferences
-            const { data: patient, error } = await this.supabase
+            const { data: patient, error } = await this.orgSupabase
                 .from('sakhi_clinic_patients')
                 .select('*')
                 .eq('id', patient_id)
@@ -87,6 +88,7 @@ export class ReminderWorker extends WorkerHost {
 
     constructor(
         @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
+        @Inject('ORG_SUPABASE_CLIENT') private readonly orgSupabase: SupabaseClient,
         private readonly dispatcher: JanmasethuDispatchService,
         private readonly engagementService: EngagementService
     ) { super(); }
@@ -98,7 +100,7 @@ export class ReminderWorker extends WorkerHost {
         const reminder = this.engagementService.getReminderFromMemory(reminder_id);
         if (!reminder || !reminder.is_active) return;
 
-        const { data: patient } = await this.supabase
+        const { data: patient } = await this.orgSupabase
             .from('sakhi_clinic_patients')
             .select('*')
             .eq('id', patient_id)
