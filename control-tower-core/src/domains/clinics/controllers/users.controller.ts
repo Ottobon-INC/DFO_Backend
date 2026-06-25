@@ -213,4 +213,61 @@ export class UsersController {
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+    @Patch(':id/availability')
+    async setAvailability(
+        @Headers('authorization') authHeader: string,
+        @Param('id') id: string,
+        @Body() body: { is_available: boolean }
+    ) {
+        const decoded = this.verifyToken(authHeader);
+
+        // Users can only change their own availability, or an admin can change anyone's
+        if (decoded.sub !== id && !decoded.is_clinic_admin && !decoded.is_super_admin) {
+            throw new HttpException({ success: false, error: 'You can only change your own availability' }, HttpStatus.FORBIDDEN);
+        }
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const updatePayload: any = {
+                is_available: body.is_available,
+                last_seen_at: new Date().toISOString(),
+            };
+
+            // Set shift_started_at on first check-in of the day
+            if (body.is_available) {
+                updatePayload.shift_started_at = new Date().toISOString();
+            }
+
+            const { error } = await supabase
+                .from('sakhi_clinic_users')
+                .update(updatePayload)
+                .eq('id', id);
+
+            if (error) throw error;
+
+            this.logger.log(`User ${id} availability set to ${body.is_available}`);
+            return { success: true, is_available: body.is_available };
+        } catch (error: any) {
+            this.logger.error(`PATCH /api/clinic/users/${id}/availability`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get('available')
+    async getAvailableClinicians(@Headers('authorization') authHeader: string) {
+        this.verifyToken(authHeader);
+        const supabase = this.supabaseService.getClient();
+        try {
+            const { data, error } = await supabase
+                .from('sakhi_clinic_users')
+                .select('id, name, role, is_available, last_seen_at, shift_started_at')
+                .eq('is_available', true)
+                .in('role', ['Doctor', 'Nurse', 'DOCTOR', 'NURSE', 'Receptionist', 'Front_Desk']);
+            if (error) throw error;
+            return { success: true, data: data || [] };
+        } catch (error: any) {
+            throw new HttpException({ success: false, error: error?.message }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
 }

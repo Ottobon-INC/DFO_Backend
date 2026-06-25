@@ -91,7 +91,7 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
-            const displayName = user.name || (user.email ? user.email.split('@')[0].split('.')[0].charAt(0).toUpperCase() + user.email.split('@')[0].split('.')[0].slice(1) : 'User');
+            const displayName = user.name || user.full_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');
 
             const token = jwt.sign(
                 { 
@@ -117,6 +117,19 @@ export class AuthController {
                 is_clinic_admin: user.is_clinic_admin,
                 token 
             };
+
+            // Auto-check in the user upon successful login
+            if (user.id && !user.id.startsWith('dev-')) {
+                try {
+                    await supabase.from('sakhi_clinic_users').update({
+                        is_available: true,
+                        shift_started_at: new Date().toISOString()
+                    }).eq('id', user.id);
+                    this.logger.log(`Auto check-in successful for user ${user.id}`);
+                } catch (err: any) {
+                    this.logger.error(`Failed to auto check-in user ${user.id}: ${err.message}`);
+                }
+            }
 
             return {
                 success: true,

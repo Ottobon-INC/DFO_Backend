@@ -16,7 +16,7 @@ import configuration from './config/configuration';
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
-      envFilePath: '.env/development.env',
+      envFilePath: '.env',
     }),
     TerminusModule,
     DatabaseModule,
