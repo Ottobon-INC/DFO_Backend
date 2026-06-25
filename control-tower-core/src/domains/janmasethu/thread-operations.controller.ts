@@ -4,6 +4,8 @@ import {
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { ThreadOperationsRepository } from './thread-operations.repository';
 import { JanmasethuDispatchService } from './channel/janmasethu-dispatch.service';
+import { JanmasethuAssignmentService } from './janmasethu.assignment';
+import { JanmasethuRole } from './janmasethu.types';
 
 @Controller('threads')
 @UseGuards(JwtAuthGuard)
@@ -11,7 +13,9 @@ export class ThreadOperationsController {
     constructor(
         private readonly repo: ThreadOperationsRepository,
         private readonly dispatchService: JanmasethuDispatchService,
+        private readonly assignmentService: JanmasethuAssignmentService,
     ) { }
+
 
     @Get()
     async getThreads(@Request() req: any) {
@@ -45,15 +49,21 @@ export class ThreadOperationsController {
         @Request() req: any
     ) {
         const user = req.user;
-        if (user.role !== 'CRO' && user.role !== 'ADMIN') {
-            throw new UnauthorizedException(`Only CROs and Admins can assign threads. Your role: ${user.role}`);
+        if (user.role !== 'CRO' && user.role !== 'ADMIN' && user.role !== 'DOCTOR' && user.role !== 'NURSE') {
+            throw new UnauthorizedException(`Only CROs, Admins, Doctors, and Nurses can assign threads. Your role: ${user.role}`);
         }
         const targetUserId = body.ownerId || body.assignTo;
         const targetRole = body.ownerType || body.role;
         if (!targetUserId || !targetRole) {
             throw new BadRequestException('ownerId (assignTo) and ownerType (role) are required');
         }
-        await this.repo.assignThread(id, targetUserId, targetRole);
+
+        // Use the Assignment Service for full SLA and Event orchestration
+        await this.assignmentService.assignThread(id, targetUserId, targetRole as JanmasethuRole, {
+            id: user.id,
+            role: user.role,
+        });
+
         return { success: true };
     }
 
@@ -83,9 +93,7 @@ export class ThreadOperationsController {
 
         // Enforce ownership: only the assigned clinician (or CRO role) can reply to an assigned thread
         if (thread.current_owner_type === 'DOCTOR' || thread.current_owner_type === 'NURSE') {
-            const isOwner = thread.current_owner_id === user.id ||
-                            (thread.current_owner_id === 'dr_sireesha' && user.id === '24efa0aa-16d8-4b59-8c1b-91847d7b5599') ||
-                            (thread.current_owner_id === 'nurse_divya' && user.id === 'adf72781-93d8-4827-ad1f-607d40c0edf3');
+            const isOwner = thread.current_owner_id === user.id;
             if (!isOwner && user.role !== 'CRO' && user.role !== 'ADMIN') {
                 throw new UnauthorizedException('Only the assigned clinician can reply to this thread.');
             }
@@ -110,9 +118,7 @@ export class ThreadOperationsController {
 
         // Only the assigned clinician (or CRO) can resolve a thread.
         if (thread.current_owner_type === 'DOCTOR' || thread.current_owner_type === 'NURSE') {
-            const isOwner = thread.current_owner_id === user.id ||
-                            (thread.current_owner_id === 'dr_sireesha' && user.id === '24efa0aa-16d8-4b59-8c1b-91847d7b5599') ||
-                            (thread.current_owner_id === 'nurse_divya' && user.id === 'adf72781-93d8-4827-ad1f-607d40c0edf3');
+            const isOwner = thread.current_owner_id === user.id;
             if (!isOwner && user.role !== 'CRO' && user.role !== 'ADMIN') {
                 throw new UnauthorizedException('Only the assigned clinician can resolve this thread.');
             }

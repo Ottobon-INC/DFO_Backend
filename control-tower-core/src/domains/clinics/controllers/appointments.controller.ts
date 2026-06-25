@@ -69,7 +69,7 @@ export class AppointmentsController {
             const { data, error } = await supabase
                 .from('sakhi_clinic_users')
                 .select('id, email, role')
-                .eq('role', 'DOCTOR');
+                .eq('role', 'Doctor');
             if (error) throw error;
             const mapped = (data || []).map(u => ({
                 id: u.id,

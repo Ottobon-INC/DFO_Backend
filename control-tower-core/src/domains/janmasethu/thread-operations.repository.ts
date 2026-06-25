@@ -178,6 +178,28 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         // If no thread exists, create one
         if (!thread) {
             this.logger.log(`Thread not found for patient ${msg.user_id}. Creating new thread.`);
+            
+            // Auto-create patient record if it doesn't exist
+            try {
+                const { data: existingUser } = await this.orgSupabase
+                    .from('sakhi_clinic_users')
+                    .select('id')
+                    .eq('id', msg.user_id)
+                    .maybeSingle();
+                
+                if (!existingUser) {
+                    this.logger.log(`Auto-creating patient record in sakhi_clinic_users for ${msg.user_id}`);
+                    await this.orgSupabase.from('sakhi_clinic_users').insert({
+                        id: msg.user_id,
+                        name: `Patient ${msg.user_id.substring(0, 5)}`,
+                        role: 'PATIENT',
+                        created_at: new Date()
+                    });
+                }
+            } catch (err) {
+                this.logger.error(`Failed to auto-create patient record for ${msg.user_id}`, err);
+            }
+
             const { data: newThread, error: createError } = await this.supabase
                 .from('conversation_threads')
                 .insert([{
@@ -295,13 +317,9 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (user) {
             const roleUpper = user.role.toUpperCase();
             if (roleUpper === 'NURSE') {
-                query = query
-                    .eq('assigned_role', 'NURSE')
-                    .or(`assigned_user_id.eq.${user.id},assigned_user_id.eq.nurse_divya`);
+                query = query.or(`assigned_role.eq.NURSE,status.eq.yellow`);
             } else if (roleUpper === 'DOCTOR') {
-                query = query
-                    .eq('assigned_role', 'DOCTOR')
-                    .or(`assigned_user_id.eq.${user.id},assigned_user_id.eq.dr_sireesha`);
+                query = query.or(`assigned_role.eq.DOCTOR,status.eq.red`);
             }
         }
 
@@ -329,6 +347,21 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             });
         }
 
+        // Batch fetch all assigned clinician names dynamically (no hardcoded UUIDs)
+        const assignedUserIds = [...new Set(visibleThreads.map(t => t.assigned_user_id).filter(Boolean))];
+        let userNameMap = new Map<string, string>();
+        if (assignedUserIds.length > 0) {
+            try {
+                const { data: userNames } = await this.orgSupabase
+                    .from('sakhi_clinic_users')
+                    .select('id, name')
+                    .in('id', assignedUserIds);
+                userNameMap = new Map((userNames || []).map((u: any) => [u.id, u.name]));
+            } catch (e) {
+                this.logger.warn('Failed to batch fetch clinician names:', e);
+            }
+        }
+
         // Enrich with patient name
         const enriched = await Promise.all(visibleThreads.map(async (t) => {
             const { data: patient } = await this.orgSupabase
@@ -337,15 +370,11 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
                 .eq('mobile', t.user_id)
                 .maybeSingle();
 
-            // Map the database UUID to dropdown IDs for frontend consistency
-            let displayOwnerId = t.assigned_user_id;
-            if (t.assigned_user_id === '24efa0aa-16d8-4b59-8c1b-91847d7b5599') displayOwnerId = 'dr_sireesha';
-            else if (t.assigned_user_id === 'adf72781-93d8-4827-ad1f-607d40c0edf3') displayOwnerId = 'nurse_divya';
-
             return {
                 ...t,
-                current_owner_type: t.assigned_role,
-                current_owner_id: displayOwnerId,
+                current_owner_type: t.current_owner_type || t.assigned_role || ((t.status === 'AI_ACTIVE' || t.status === 'active') ? 'AI' : null),
+                current_owner_id: t.assigned_user_id || null,
+                current_owner_name: userNameMap.get(t.assigned_user_id) || null,
                 patient_name: patient?.name || 'Patient ' + (t.user_id ? t.user_id.substring(0, 5) : 'Unknown')
             };
         }));
@@ -367,15 +396,26 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             .eq('mobile', data.user_id)
             .maybeSingle();
 
-        // Map the database UUID to dropdown IDs for frontend consistency
-        let displayOwnerId = data.assigned_user_id;
-        if (data.assigned_user_id === '24efa0aa-16d8-4b59-8c1b-91847d7b5599') displayOwnerId = 'dr_sireesha';
-        else if (data.assigned_user_id === 'adf72781-93d8-4827-ad1f-607d40c0edf3') displayOwnerId = 'nurse_divya';
+        // Dynamically fetch clinician name from DB (no hardcoded UUIDs)
+        let ownerName: string | null = null;
+        if (data.assigned_user_id) {
+            try {
+                const { data: clinician } = await this.orgSupabase
+                    .from('sakhi_clinic_users')
+                    .select('name')
+                    .eq('id', data.assigned_user_id)
+                    .maybeSingle();
+                ownerName = clinician?.name || null;
+            } catch (e) {
+                this.logger.warn(`Could not fetch clinician name for ${data.assigned_user_id}`);
+            }
+        }
 
         return {
             ...data,
             current_owner_type: data.assigned_role,
-            current_owner_id: displayOwnerId,
+            current_owner_id: data.assigned_user_id || null,
+            current_owner_name: ownerName,
             patient_name: patient?.name || 'Patient ' + (data.user_id ? data.user_id.substring(0, 5) : 'Unknown')
         };
     }
@@ -508,21 +548,14 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             .eq('id', id);
         if (error) throw error;
 
-        // Fetch clinician's name
+        // Fetch clinician's name dynamically from DB
         const { data: user } = await this.orgSupabase
             .from('sakhi_clinic_users')
             .select('name')
             .eq('id', assignTo)
             .maybeSingle();
 
-        let clinicianName = user?.name;
-        if (!clinicianName) {
-            if (assignTo === 'dr_sireesha') clinicianName = 'Dr. Sireesha';
-            else if (assignTo === 'dr_ananya') clinicianName = 'Dr. Ananya';
-            else if (assignTo === 'nurse_divya') clinicianName = 'Nurse Divya';
-            else if (assignTo === 'nurse_sarah') clinicianName = 'Nurse Sarah';
-            else clinicianName = roleUpper === 'DOCTOR' ? `Doctor (${assignTo})` : `Nurse (${assignTo})`;
-        }
+        const clinicianName = user?.name || (roleUpper === 'DOCTOR' ? `Doctor (${assignTo})` : `Nurse (${assignTo})`);
 
         await this.replyToThread(id, 'SYSTEM', 'SYSTEM', `Thread assigned to ${clinicianName}.`);
     }
@@ -593,7 +626,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
                 assigned_to: null,
                 assigned_user_id: null,
                 assigned_role: null,
-                status: 'AI_ACTIVE',
+                status: 'resolved',
                 ai_suppressed: false,
                 resolved_at: new Date(),
                 resolved_by: userId || null,
@@ -602,7 +635,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             .eq('id', id);
         if (error) throw error;
 
-        await this.replyToThread(id, 'SYSTEM', 'SYSTEM', 'Thread resolved and returned to AI.');
+        await this.replyToThread(id, 'SYSTEM', 'SYSTEM', `Thread resolved and returned to AI by clinician.`);
     }
 
     async refreshSummary(id: string, clinicalSummary: string, handoffSummary: string) {
@@ -618,14 +651,21 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     }
 
     async findClinicians() {
-        const { data, error } = await this.supabase
+        // Use orgSupabase — sakhi_clinic_users is in the Org/Hostinger DB
+        const { data, error } = await this.orgSupabase
             .from('sakhi_clinic_users')
-            .select('id, name, role')
-            .in('role', ['Doctor', 'Nurse', 'Receptionist']);
+            .select('id, email, role, is_available, last_seen_at')
+            .in('role', ['Doctor', 'Nurse', 'Receptionist', 'DOCTOR', 'NURSE', 'Front_Desk', 'FRONT_DESK']);
         if (error) throw error;
-        return (data || []).map(u => ({
-            ...u,
-            role: (u.role === 'Front_Desk' || u.role === 'Receptionist') ? 'Nurse' : u.role
-        }));
+        return (data || []).map((u: any) => {
+            const parsedName = u.email ? u.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User';
+            return {
+                id: u.id,
+                name: parsedName,
+                role: (u.role === 'Front_Desk' || u.role === 'Receptionist' || u.role === 'FRONT_DESK') ? 'Nurse' : u.role,
+                is_available: u.is_available || false,
+                last_seen_at: u.last_seen_at || null
+            };
+        });
     }
 }

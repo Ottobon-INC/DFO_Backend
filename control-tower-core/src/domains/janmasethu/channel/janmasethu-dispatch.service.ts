@@ -48,9 +48,10 @@ export class JanmasethuDispatchService {
                 }
             }
 
-            if (channel === 'whatsapp') {
+            const normalizedChannel = channel?.toLowerCase();
+            if (normalizedChannel === 'whatsapp') {
                 await this.sendWhatsApp(userId, message);
-            } else if (channel === 'web') {
+            } else if (normalizedChannel === 'web') {
                 await axios.post(this.webUrl, { userId, message });
             }
             this.logger.log(`Successfully dispatched message to ${channel}`);
