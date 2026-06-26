@@ -62,8 +62,8 @@ export class ConsentEnforcementService {
   /**
    * Updates or creates consent preferences for a patient.
    */
-  async saveConsent(patientId: string, preferences: ConsentPreferences): Promise<boolean> {
-    const success = await this.repository.saveConsent(patientId, preferences);
+  async saveConsent(patientId: string, clinicId: string, preferences: ConsentPreferences): Promise<boolean> {
+    const success = await this.repository.saveConsent(patientId, clinicId, preferences);
 
     if (success) {
       this.audit.log(

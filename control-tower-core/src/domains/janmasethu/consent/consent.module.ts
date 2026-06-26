@@ -12,6 +12,6 @@ import { EncryptionService } from '../../../infrastructure/security/encryption.s
     ConsentRepository,
     EncryptionService,
   ],
-  exports: [ConsentEnforcementService],
+  exports: [ConsentEnforcementService, ConsentRepository],
 })
 export class ConsentModule { }

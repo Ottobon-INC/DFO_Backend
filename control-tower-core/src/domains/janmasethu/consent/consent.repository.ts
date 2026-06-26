@@ -45,13 +45,14 @@ export class ConsentRepository {
     }
   }
 
-  async saveConsent(patientId: string, preferences: ConsentPreferences): Promise<boolean> {
+  async saveConsent(patientId: string, clinicId: string, preferences: ConsentPreferences): Promise<boolean> {
     const encrypted = this.encryption.encrypt(JSON.stringify(preferences));
 
     const { error } = await this.supabase
       .from('patient_consents')
       .upsert({
         patient_id: patientId,
+        clinic_id: clinicId,
         preferences_encrypted: encrypted,
         updated_at: new Date().toISOString()
       }, { onConflict: 'patient_id' });

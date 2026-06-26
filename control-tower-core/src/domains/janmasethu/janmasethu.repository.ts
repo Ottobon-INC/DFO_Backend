@@ -107,7 +107,7 @@ export class JanmasethuRepository {
     }
 
     async findMessageById(id: string): Promise<Message | null> {
-        // Since id is an integer/serial in sakhi_conversations, parse it if possible, otherwise use string match
+        // Since id is an integer/serial in sakhi_conversations_new, parse it if possible, otherwise use string match
         const parsedId = parseInt(id, 10);
         const query = this.orgSupabase
             .from('sakhi_conversations_new')
@@ -200,6 +200,16 @@ export class JanmasethuRepository {
             .maybeSingle();
         if (error) return null;
         return data as DFOPatient;
+    }
+
+    async findSakhiPatientByPhone(phone: string): Promise<any | null> {
+        const { data, error } = await this.orgSupabase
+            .from('sakhi_clinic_patients')
+            .select('id, name, mobile, clinic_id')
+            .eq('mobile', phone)
+            .maybeSingle();
+        if (error) return null;
+        return data;
     }
 
     async findPatientByResolution(phone?: string, authId?: string): Promise<DFOPatient | null> {

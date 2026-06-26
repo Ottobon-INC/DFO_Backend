@@ -4,7 +4,10 @@ import { Message } from '../../types';
 
 @Injectable()
 export class MessageRepository {
-    constructor(@Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient) { }
+    constructor(
+        @Inject('SUPABASE_CLIENT') private readonly personalSupabase: SupabaseClient,
+        @Inject('ORG_SUPABASE_CLIENT') private readonly orgSupabase: SupabaseClient
+    ) { }
 
     private mapSakhiToMessage(row: any): Message {
         return {
@@ -18,8 +21,8 @@ export class MessageRepository {
     }
 
     async create(data: Omit<Message, 'id' | 'created_at'>): Promise<Message> {
-        const { data: created, error } = await this.supabase
-            .from('sakhi_conversations')
+        const { data: created, error } = await this.orgSupabase
+            .from('sakhi_conversations_new')
             .insert([{
                 chat_id: data.thread_id,
                 user_id: data.sender_id,
@@ -35,14 +38,14 @@ export class MessageRepository {
     }
 
     async findByThread(threadId: string): Promise<Message[]> {
-        const { data: thread } = await this.supabase
+        const { data: thread } = await this.personalSupabase
             .from('conversation_threads')
             .select('user_id')
             .eq('id', threadId)
             .maybeSingle();
 
-        let query = this.supabase
-            .from('sakhi_conversations')
+        let query = this.orgSupabase
+            .from('sakhi_conversations_new')
             .select('*');
 
         if (thread && thread.user_id) {
