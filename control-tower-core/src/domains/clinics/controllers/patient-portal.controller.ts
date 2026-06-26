@@ -1,6 +1,7 @@
 import { Controller, Get, Logger, HttpException, HttpStatus, Headers } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
+import { S3Service } from '../../../infrastructure/aws/s3.service';
 import * as jwt from 'jsonwebtoken';
 
 @Controller('api/patient-portal')
@@ -11,6 +12,7 @@ export class PatientPortalController {
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly configService: ConfigService,
+        private readonly s3Service: S3Service,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
     }
@@ -122,9 +124,32 @@ export class PatientPortalController {
                 .from('sakhi_clinic_documents')
                 .select('*')
                 .eq('patient_id', patient.sub)
-                .order('uploaded_at', { ascending: false });
+                .order('created_at', { ascending: false });
 
-            return { success: true, data: { documents: documents || [] } };
+            if (!documents) {
+                return { success: true, data: { documents: [] } };
+            }
+
+            // Generate presigned URLs for each document that has an S3 file_path
+            const enrichedDocuments = await Promise.all(
+                documents.map(async (doc) => {
+                    let url = doc.url || '#';
+                    if (doc.file_path) {
+                        try {
+                            url = await this.s3Service.generatePresignedDownloadUrl(doc.file_path);
+                        } catch (err) {
+                            this.logger.warn(`Failed to generate download URL for document ${doc.id}`);
+                        }
+                    }
+                    return {
+                        ...doc,
+                        url, // Append the presigned URL or fallback to existing 'url' if any
+                        uploaded_at: doc.created_at // Alias created_at to uploaded_at for backward compatibility
+                    };
+                })
+            );
+
+            return { success: true, data: { documents: enrichedDocuments } };
         } catch (error: any) {
             this.logger.error('Vault data fetch error:', error);
             throw new HttpException({ success: false, error: 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);

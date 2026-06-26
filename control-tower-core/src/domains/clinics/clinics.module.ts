@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ClinicsSupabaseService } from './services/clinics-supabase.service';
 import { ClinicsEncryptionService } from './services/clinics-encryption.service';
 import { ClinicsUtilsService } from './services/clinics-utils.service';
+import { DocumentsService } from './services/documents.service';
 
 // Guards
 import { ClinicsAuthGuard } from './guards/clinics-auth.guard';
@@ -24,12 +25,18 @@ import { SuperAdminAuthController } from './controllers/super-admin-auth.control
 import { PatientAuthController } from './controllers/patient-auth.controller';
 import { PatientPortalController } from './controllers/patient-portal.controller';
 import { StaffController } from './controllers/staff.controller';
+import { DocumentsController } from './controllers/documents.controller';
+import { AuditController } from './controllers/audit.controller';
+
+// Feature Modules
+import { AwsModule } from '../../infrastructure/aws/aws.module';
 @Module({
-    imports: [ConfigModule],
+    imports: [ConfigModule, AwsModule],
     providers: [
         ClinicsSupabaseService,
         ClinicsEncryptionService,
         ClinicsUtilsService,
+        DocumentsService,
         ClinicsAuthGuard,
     ],
     controllers: [
@@ -47,11 +54,14 @@ import { StaffController } from './controllers/staff.controller';
         PatientAuthController,
         PatientPortalController,
         StaffController,
+        DocumentsController,
+        AuditController,
     ],
     exports: [
         ClinicsSupabaseService,
         ClinicsEncryptionService,
         ClinicsUtilsService,
+        DocumentsService,
     ],
 })
 export class ClinicsModule {}

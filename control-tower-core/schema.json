@@ -886,6 +886,11 @@
         "format": "uuid",
         "type": "string"
       },
+      "status": {
+        "default": "unassigned",
+        "format": "text",
+        "type": "string"
+      },
       "created_at": {
         "default": "timezone('utc'::text, now())",
         "format": "timestamp with time zone",

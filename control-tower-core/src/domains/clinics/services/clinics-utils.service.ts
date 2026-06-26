@@ -83,4 +83,45 @@ export class ClinicsUtilsService {
 
         await supabase.from('sakhi_clinic_appointments').update(updates).eq('id', appointmentId);
     }
+
+    async checkGlobalDoctorAvailability(
+        supabase: SupabaseClient,
+        doctorId: string,
+        appointmentDate: string,
+        startTime: string,
+        endTime: string,
+        excludeAppointmentId?: string
+    ): Promise<{ isAvailable: boolean; conflictClinicId?: string }> {
+        let query = supabase
+            .from('sakhi_clinic_appointments')
+            .select('id, clinic_id, start_time, end_time')
+            .eq('doctor_id', doctorId)
+            .eq('appointment_date', appointmentDate)
+            .not('status', 'in', '("Canceled","No Show")');
+
+        if (excludeAppointmentId) {
+            query = query.neq('id', excludeAppointmentId);
+        }
+
+        const { data: existingAppts, error } = await query;
+        
+        if (error) {
+            throw error;
+        }
+
+        if (!existingAppts || existingAppts.length === 0) {
+            return { isAvailable: true };
+        }
+
+        // Check for time overlap
+        // Two intervals [A_start, A_end] and [B_start, B_end] overlap if:
+        // A_start < B_end AND A_end > B_start
+        for (const appt of existingAppts) {
+            if (startTime < appt.end_time && endTime > appt.start_time) {
+                return { isAvailable: false, conflictClinicId: appt.clinic_id };
+            }
+        }
+
+        return { isAvailable: true };
+    }
 }
