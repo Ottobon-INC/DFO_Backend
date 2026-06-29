@@ -50,7 +50,7 @@ export class AuthController {
             // Fallback for development if the table is empty or cannot be queried/inserted
             if (!user) {
                 const devUsers = [
-                    { id: 'dev-admin-id', email: 'admin@medcyivf.com', password_hash: 'password123', name: 'Admin User', role: 'admin' },
+                    { id: 'dev-admin-id', email: 'admin@medcyivf.com', password_hash: 'password123', name: 'Admin User', role: 'admin', is_clinic_admin: true },
                     { id: 'dev-doctor-id', email: 'doctor@medcyivf.com', password_hash: 'password123', name: 'Dr. Ragini', role: 'doctor' },
                     { id: 'dev-doctor-ragini', email: 'dr.ragini@medcy.com', password_hash: 'password123', name: 'Dr. Ragini', role: 'doctor' },
                     { id: 'dev-frontdesk-id', email: 'frontdesk@medcyivf.com', password_hash: 'password123', name: 'Front Desk User', role: 'frontdesk' },
@@ -102,7 +102,7 @@ export class AuthController {
                     name: displayName,
                     clinic_id: user.clinic_id,
                     is_super_admin: user.is_super_admin,
-                    is_clinic_admin: user.is_clinic_admin
+                    is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin'
                 },
                 this.jwtSecret,
                 { expiresIn: this.jwtExpiresIn },
@@ -115,7 +115,7 @@ export class AuthController {
                 role: user.role, 
                 clinic_id: user.clinic_id,
                 is_super_admin: user.is_super_admin,
-                is_clinic_admin: user.is_clinic_admin,
+                is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin',
                 token 
             };
 
