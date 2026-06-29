@@ -81,7 +81,7 @@ export class UsersController {
             throw new HttpException({ success: false, error: 'Name, email, password, and role are required' }, HttpStatus.BAD_REQUEST);
         }
 
-        const allowedRoles = ['DOCTOR', 'CRO', 'FRONT_DESK', 'NURSE'];
+        const allowedRoles = ['Doctor', 'CRO', 'Receptionist', 'Nurse'];
         if (!allowedRoles.includes(role)) {
             throw new HttpException({ success: false, error: 'Invalid role' }, HttpStatus.BAD_REQUEST);
         }
@@ -170,7 +170,7 @@ export class UsersController {
             if (name) updatePayload.name = name;
 
             if (role) {
-                const allowedRoles = ['DOCTOR', 'CRO', 'FRONT_DESK', 'NURSE'];
+                const allowedRoles = ['Doctor', 'CRO', 'Receptionist', 'Nurse'];
                 if (!allowedRoles.includes(role)) {
                     throw new HttpException({ success: false, error: 'Invalid role' }, HttpStatus.BAD_REQUEST);
                 }
