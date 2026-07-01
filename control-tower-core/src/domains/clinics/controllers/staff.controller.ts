@@ -1,7 +1,12 @@
-import { Controller, Post, Get, Body, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
+import { StaffEvent } from '../../../infrastructure/events/event-payloads';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
+import { StaffCacheService } from '../services/staff-cache.service';
 
 @Controller('api/v1/clinics/staff')
 export class StaffController {
@@ -10,12 +15,20 @@ export class StaffController {
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly utils: ClinicsUtilsService,
+        private readonly staffCache: StaffCacheService,
+        @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {}
 
     @Get()
     async listStaff() {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        // Check cache first
+        const cachedStaff = await this.staffCache.getStaffList(clinic_id);
+        if (cachedStaff) {
+            return { success: true, data: cachedStaff, cached: true };
+        }
 
         const supabase = this.supabaseService.getClient();
         try {
@@ -48,6 +61,9 @@ export class StaffController {
                 email: item.sakhi_clinic_users?.email,
                 joined_at: item.sakhi_clinic_users?.created_at
             }));
+
+            // Save to cache
+            await this.staffCache.setStaffList(clinic_id, staffList);
 
             return { success: true, data: staffList };
         } catch (error: any) {
@@ -114,10 +130,60 @@ export class StaffController {
                 throw error;
             }
 
-            return { success: true, data };
+            // Invalidate cache (now handled by background listener)
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.STAFF_ASSIGNED, new StaffEvent(
+                clinic_id, actor_id, { action: 'assign_staff', user_id: data.user_id, role: data.role }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, message: 'Staff assigned successfully', data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error('POST /api/v1/clinics/staff', error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete(':id')
+    async unassignStaff(@Param('id') assignment_id: string) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        // RBAC Enforcement: Must be a clinic admin
+        if (!TenantContext.getState()?.is_clinic_admin && !TenantContext.isSuperAdmin()) {
+            throw new HttpException({ success: false, error: 'Only Clinic Admins can remove staff assignments' }, HttpStatus.FORBIDDEN);
+        }
+
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            // Delete the assignment from clinic_staff ensuring it belongs to the current clinic
+            const { data, error } = await supabase
+                .from('clinic_staff')
+                .delete()
+                .eq('id', assignment_id)
+                .eq('clinic_id', clinic_id)
+                .select()
+                .single();
+
+            if (error) {
+                if (error.code === 'PGRST116') {
+                    // Not found or not in this clinic
+                    throw new HttpException({ success: false, error: 'Assignment not found in this clinic' }, HttpStatus.NOT_FOUND);
+                }
+                throw error;
+            }
+
+            // Invalidate cache (now handled by background listener)
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.STAFF_UNASSIGNED, new StaffEvent(
+                clinic_id, actor_id, { action: 'unassign_staff', assignment_id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, message: 'Staff assignment removed successfully' };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`DELETE /api/v1/clinics/staff/${assignment_id}`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

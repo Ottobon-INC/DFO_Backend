@@ -1,8 +1,13 @@
 import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, Res, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
+import { LeadEvent } from '../../../infrastructure/events/event-payloads';
 import { Response } from 'express';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { ClinicsEncryptionService } from '../services/clinics-encryption.service';
+import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 import { COLUMN_MAPPINGS, VALID_STATUSES, SOURCE_VALUES, normalizeStatus, looksLikeSource, looksLikeStatus, normalizeLead } from '../helpers/leads.helpers';
 
@@ -14,6 +19,7 @@ export class LeadsController {
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly utils: ClinicsUtilsService,
         private readonly encryption: ClinicsEncryptionService,
+        @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {}
 
     @Get()
@@ -62,6 +68,13 @@ export class LeadsController {
             });
             const { data, error } = await supabase.from('sakhi_clinic_leads').insert(payload).select().single();
             if (error) throw error;
+            
+            const actor_id = TenantContext.getUserId();
+            const clinic_id = TenantContext.getClinicId() || '';
+            await this.eventsQueue.add(DFO_EVENTS.LEAD_CREATED, new LeadEvent(
+                clinic_id, actor_id, data.id, { action: 'create_lead' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -131,8 +144,17 @@ export class LeadsController {
             let successCount = 0;
             if (validLeadsToInsert.length > 0) {
                 const { error: insertError } = await supabase.from('sakhi_clinic_leads').insert(validLeadsToInsert);
-                if (insertError) throw insertError;
-                successCount = validLeadsToInsert.length;
+                if (insertError) {
+                    errors.push(`Database insert failed: ${insertError.message}`);
+                } else {
+                    successCount = validLeadsToInsert.length;
+                    
+                    const actor_id = TenantContext.getUserId();
+                    const clinic_id = TenantContext.getClinicId() || '';
+                    await this.eventsQueue.add(DFO_EVENTS.LEAD_BULK_IMPORTED, new LeadEvent(
+                        clinic_id, actor_id, 'bulk_import', { action: 'bulk_import_leads', count: successCount }
+                    ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+                }
             }
             return { success: true, count: successCount, failed: errors.length, errors };
         } catch (error: any) {
@@ -172,6 +194,13 @@ export class LeadsController {
             const { data, error } = await supabase.from('sakhi_clinic_leads').update(updates).eq('id', id).select().single();
             if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Lead not found' }, HttpStatus.NOT_FOUND);
             if (error) throw new HttpException({ success: false, error: error.message || 'Internal Server Error', details: error.details }, HttpStatus.INTERNAL_SERVER_ERROR);
+            
+            const actor_id = TenantContext.getUserId();
+            const clinic_id = TenantContext.getClinicId() || '';
+            await this.eventsQueue.add(DFO_EVENTS.LEAD_UPDATED, new LeadEvent(
+                clinic_id, actor_id, id, { action: 'update_lead', status: updates.status }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -185,9 +214,17 @@ export class LeadsController {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinic_leads').update({ status: 'Follow Up' }).eq('id', id).select().single();
+            const clinic_id = TenantContext.getClinicId() || '';
+            const updates = { status: 'Follow Up' };
+            const { data, error } = await supabase.from('sakhi_clinic_leads').update(updates).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Lead not found' }, HttpStatus.NOT_FOUND);
             if (error) throw error;
+            
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.LEAD_UPDATED, new LeadEvent(
+                clinic_id, actor_id, id, { action: 'update_lead', status: updates.status }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;

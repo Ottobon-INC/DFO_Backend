@@ -1,4 +1,8 @@
 import { Controller, Get, Post, Patch, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
+import { PatientEvent } from '../../../infrastructure/events/event-payloads';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
@@ -15,6 +19,7 @@ export class PatientsController {
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly utils: ClinicsUtilsService,
+        @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {}
 
     @Get()
@@ -90,6 +95,12 @@ export class PatientsController {
 
             const { data, error } = await supabase.from('sakhi_clinic_patients').insert(payload).select().single();
             if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_CREATED, new PatientEvent(
+                clinic_id, actor_id, data.id, { action: 'create_patient' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data, generatedPin: rawPin };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -157,6 +168,12 @@ export class PatientsController {
             const { data, error } = await supabase.from('sakhi_clinic_patients').update(sanitized).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Patient not found' }, HttpStatus.NOT_FOUND);
             if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'update_patient' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -211,6 +228,12 @@ export class PatientsController {
             const payload = this.utils.sanitizePayload({ clinic_id, patient_id: id, author_id: this.utils.isUuid(body?.doctor_id) ? body.doctor_id : null, note: body.note });
             const { data, error } = await supabase.from('sakhi_clinic_patient_notes').insert(payload).select().single();
             if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_NOTE_CREATED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'create_clinical_note', note_id: data.id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -247,6 +270,12 @@ export class PatientsController {
             const payload = this.utils.sanitizePayload({ clinic_id, patient_id: id, doctor_id: body.doctor_id, appointment_id: body.appointment_id, subjective: body.subjective, objective: body.objective, assessment: body.assessment, plan: body.plan });
             const { data, error } = await supabase.from('sakhi_clinical_notes').insert(payload).select().single();
             if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_NOTE_CREATED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'create_structured_note', note_id: data.id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -304,6 +333,12 @@ export class PatientsController {
                 .insert({ clinic_id, patient_id: id, name, document_type, url: fileUrl, uploaded_at: new Date().toISOString() })
                 .select().single();
             if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_DOCUMENT_UPLOADED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'upload_patient_document', document_id: data.id, document_type }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -340,6 +375,11 @@ export class PatientsController {
 
             if (error) throw error;
             
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_PIN_RESET, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'reset_patient_pin' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { 
                 success: true, 
                 message: 'PIN successfully reset',

@@ -1,5 +1,9 @@
 import { Controller, Post, Body, Logger, HttpException, HttpStatus, Headers, Patch } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
+import { AuthEvent } from '../../../infrastructure/events/event-payloads';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import * as jwt from 'jsonwebtoken';
 
@@ -12,6 +16,7 @@ export class AuthController {
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly configService: ConfigService,
+        @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
     }
@@ -29,7 +34,10 @@ export class AuthController {
             const { data: user, error } = await supabase
                 .from('sakhi_clinic_users').select('*').eq('email', email).single();
 
+            this.logger.debug(`Supabase user query result for ${email}: user=${!!user}, error=${error ? JSON.stringify(error) : 'none'}`);
+
             if (error || !user) {
+                this.logger.error(`Login failed: user=${!!user}, error=${JSON.stringify(error)}`);
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
@@ -37,31 +45,30 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'User has no password set. Please contact admin.' }, HttpStatus.UNAUTHORIZED);
             }
 
-            // Use password-hash verify, with plain text fallback for dev
+            // Use password-hash verify
             let isMatch = false;
             try {
                 const passwordHash = require('password-hash');
                 if (passwordHash.verify(password, user.password_hash)) {
                     isMatch = true;
                 }
-            } catch {
-                // If password-hash isn't available, skip
-            }
-
-            if (!isMatch && user.password_hash === password) {
-                isMatch = true; // Dev fallback
+            } catch (err) {
+                this.logger.error('Error verifying password hash:', err);
             }
 
             if (!isMatch) {
+                await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN_FAILED, new AuthEvent(
+                    null, null, { action: 'login_failed', username: email, reason: 'Invalid credentials' }
+                ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
             const token = jwt.sign(
-                { 
-                    sub: user.id, 
+                {
+                    sub: user.id,
                     user_id: user.id,
-                    email: user.email, 
-                    role: user.role, 
+                    email: user.email,
+                    role: user.role,
                     name: user.name,
                     clinic_id: user.clinic_id,
                     is_super_admin: user.is_super_admin,
@@ -71,16 +78,20 @@ export class AuthController {
                 { expiresIn: this.jwtExpiresIn },
             );
 
-            const userResponse = { 
-                id: user.id, 
-                name: user.name, 
-                email: user.email, 
-                role: user.role, 
+            const userResponse = {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
                 clinic_id: user.clinic_id,
                 is_super_admin: user.is_super_admin,
                 is_clinic_admin: user.is_clinic_admin,
-                token 
+                token
             };
+
+            await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN, new AuthEvent(
+                user.clinic_id, user.id, { action: 'login_success' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return {
                 success: true,
@@ -170,7 +181,7 @@ export class AuthController {
         }
 
         const supabase = this.supabaseService.getClient();
-        
+
         const { data: user, error } = await supabase
             .from('sakhi_clinic_users')
             .select('*')

@@ -1,4 +1,8 @@
 import { Controller, Get, Post, Patch, Param, Query, Body, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
+import { AppointmentEvent } from '../../../infrastructure/events/event-payloads';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
@@ -12,6 +16,7 @@ export class AppointmentsController {
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly utils: ClinicsUtilsService,
+        @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {}
 
     @Get()
@@ -63,8 +68,7 @@ export class AppointmentsController {
                 .from('sakhi_clinic_users')
                 .select('id, name, specialization, role')
                 .eq('clinic_id', clinic_id)
-                .in('role', ['DOCTOR', 'Superadmin', 'Admin'])
-                .eq('is_active', true)
+                .in('role', ['Doctor', 'Superadmin', 'Admin'])
                 .order('name');
             if (error) throw error;
             return { success: true, data: data || [] };
@@ -216,7 +220,7 @@ export class AppointmentsController {
             }
 
             if (doctor_id) {
-                const { data: doctorRow, error: doctorNameError } = await supabase.from('sakhi_clinic_users').select('name').eq('id', doctor_id).eq('clinic_id', clinic_id).eq('role', 'DOCTOR').maybeSingle();
+                const { data: doctorRow, error: doctorNameError } = await supabase.from('sakhi_clinic_users').select('name').eq('id', doctor_id).eq('clinic_id', clinic_id).eq('role', 'Doctor').maybeSingle();
                 if (doctorNameError && doctorNameError.code !== 'PGRST116') throw doctorNameError;
                 if (!doctorRow) throw new HttpException({ success: false, error: 'Doctor not found or invalid role' }, HttpStatus.BAD_REQUEST);
                 if (!doctorNameSnapshot || doctorNameSnapshot === doctor_id) doctorNameSnapshot = doctorRow.name;
@@ -235,6 +239,12 @@ export class AppointmentsController {
 
             const { data, error } = await supabase.from('sakhi_clinic_appointments').insert(payload).select().single();
             if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_CREATED, new AppointmentEvent(
+                clinic_id, actor_id, data.id, { action: 'create_appointment' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -328,7 +338,7 @@ export class AppointmentsController {
                     validatedDoctorId = undefined;
                 } else {
                     const { data: doctor, error: doctorError } = await supabase
-                        .from('sakhi_clinic_users').select('id').eq('id', body.doctor_id).eq('clinic_id', clinic_id).eq('role', 'DOCTOR').single();
+                        .from('sakhi_clinic_users').select('id').eq('id', body.doctor_id).eq('clinic_id', clinic_id).eq('role', 'Doctor').single();
                     if (doctorError?.code === 'PGRST116' || !doctor) {
                         throw new HttpException({ success: false, error: 'Doctor not found or invalid role', code: 'DOCTOR_NOT_FOUND' }, HttpStatus.BAD_REQUEST);
                     }
@@ -383,6 +393,12 @@ export class AppointmentsController {
             }
             if (error) throw error;
             await this.utils.backfillPatientSnapshot(supabase, id);
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_UPDATED, new AppointmentEvent(
+                clinic_id, actor_id, id, { action: 'update_appointment' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -433,6 +449,12 @@ export class AppointmentsController {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
             if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_STATUS_CHANGED, new AppointmentEvent(
+                clinic_id, actor_id, id, { action: 'update_appointment_status', previousStatus: appointment.status, newStatus: status }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;

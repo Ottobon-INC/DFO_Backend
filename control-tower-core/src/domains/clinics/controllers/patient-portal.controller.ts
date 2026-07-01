@@ -113,6 +113,110 @@ export class PatientPortalController {
         }
     }
 
+    @Get('documents')
+    async getDocuments(@Headers('authorization') authHeader: string) {
+        const patient = this.verifyPatientToken(authHeader);
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            const { data } = await supabase
+                .from('sakhi_documents')
+                .select('*')
+                .eq('patient_id', patient.sub)
+                .order('created_at', { ascending: false });
+
+            // Generate temporary URLs for viewing
+            const docsWithUrls = await Promise.all((data || []).map(async (doc) => {
+                if (doc.s3_key) {
+                    try {
+                        const url = await this.s3Service.generatePresignedDownloadUrl(doc.s3_key);
+                        return { ...doc, file_url: url };
+                    } catch (e) {
+                        return doc;
+                    }
+                }
+                return doc;
+            }));
+
+            return { success: true, data: docsWithUrls };
+        } catch (error: any) {
+            this.logger.error('Documents fetch error:', error);
+            throw new HttpException({ success: false, error: 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get('my-admission')
+    async getMyAdmission(@Headers('authorization') authHeader: string) {
+        const patient = this.verifyPatientToken(authHeader);
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            // Fetch active admission with deep joins for full visibility
+            const { data: admission } = await supabase
+                .from('sakhi_clinic_admissions')
+                .select(`
+                    id, 
+                    status, 
+                    admission_date,
+                    attending_doctor_id,
+                    sakhi_clinic_bed_assignments!inner(
+                        is_current,
+                        sakhi_clinic_beds!inner(
+                            bed_identifier,
+                            sakhi_clinic_rooms!inner(
+                                room_number,
+                                name,
+                                sakhi_clinic_room_categories!inner(
+                                    name,
+                                    tier
+                                )
+                            )
+                        )
+                    )
+                `)
+                .eq('patient_id', patient.sub)
+                .eq('status', 'admitted')
+                .eq('sakhi_clinic_bed_assignments.is_current', true)
+                .single();
+
+            if (!admission) {
+                return { success: true, data: null };
+            }
+
+            // Optional: Fetch doctor name manually since we only have doctor_id
+            let attendingDoctorName = 'Unknown';
+            if (admission.attending_doctor_id) {
+                const { data: doctor } = await supabase.from('sakhi_staff').select('name').eq('id', admission.attending_doctor_id).single();
+                if (doctor) attendingDoctorName = doctor.name;
+            }
+
+            const assignment = admission.sakhi_clinic_bed_assignments[0] as any;
+            const bed = assignment?.sakhi_clinic_beds;
+            const room = bed?.sakhi_clinic_rooms;
+            const category = room?.sakhi_clinic_room_categories;
+
+            return {
+                success: true,
+                data: {
+                    id: admission.id,
+                    admission_date: admission.admission_date,
+                    attending_doctor: attendingDoctorName,
+                    category_name: category?.name || 'General',
+                    category_tier: category?.tier || 'basic',
+                    ward_name: room?.name || room?.room_number,
+                    bed_position: bed?.bed_identifier
+                }
+            };
+        } catch (error: any) {
+            this.logger.error('My Admission fetch error:', error);
+            if (error.code === 'PGRST116') {
+                 // No active admission found
+                 return { success: true, data: null };
+            }
+            throw new HttpException({ success: false, error: 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     @Get('vault')
     async getClinicalVault(@Headers('authorization') authHeader: string) {
         const patient = this.verifyPatientToken(authHeader);

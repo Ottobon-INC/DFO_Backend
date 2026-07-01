@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Agent as UndiciAgent } from 'undici';
 
 @Injectable()
 export class ClinicsSupabaseService {
@@ -20,7 +21,7 @@ export class ClinicsSupabaseService {
             auth: {
                 autoRefreshToken: false,
                 persistSession: false,
-            },
+            }
         });
 
         this.logger.log('Supabase admin client initialized for Clinics module');

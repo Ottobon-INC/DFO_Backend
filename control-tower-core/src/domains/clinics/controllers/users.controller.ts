@@ -1,7 +1,13 @@
-import { Controller, Post, Get, Patch, Param, Body, Logger, HttpException, HttpStatus, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, Logger, HttpException, HttpStatus, Headers } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
+import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import * as jwt from 'jsonwebtoken';
 import { ConfigService } from '@nestjs/config';
+import { StaffCacheService } from '../services/staff-cache.service';
+import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
+import { StaffEvent } from '../../../infrastructure/events/event-payloads';
 
 @Controller('api/clinic/users')
 export class UsersController {
@@ -11,6 +17,8 @@ export class UsersController {
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly configService: ConfigService,
+        private readonly staffCache: StaffCacheService,
+        @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {
         this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
     }
@@ -109,6 +117,11 @@ export class UsersController {
                 throw error;
             }
 
+            // Emit event for cache invalidation
+            await this.eventsQueue.add(DFO_EVENTS.USER_CREATED, new StaffEvent(
+                decoded.clinic_id, decoded.sub, { action: 'create_clinic_user', user_id: data.id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -194,10 +207,76 @@ export class UsersController {
 
             if (error) throw error;
 
+            // Emit event for cache invalidation
+            await this.eventsQueue.add(DFO_EVENTS.USER_UPDATED, new StaffEvent(
+                decoded.clinic_id, decoded.sub, { action: 'update_clinic_user', user_id: id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`PATCH /api/clinic/users/${id}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete(':id')
+    async removeClinicUser(
+        @Headers('authorization') authHeader: string,
+        @Param('id') id: string
+    ) {
+        const decoded = this.verifyToken(authHeader);
+
+        // RBAC Enforcement: Must be a clinic admin
+        if (!decoded.is_clinic_admin) {
+            throw new HttpException({ success: false, error: 'Only Clinic Admins can remove team members' }, HttpStatus.FORBIDDEN);
+        }
+
+        if (!decoded.clinic_id) {
+            throw new HttpException({ success: false, error: 'Admin is not bound to a clinic' }, HttpStatus.BAD_REQUEST);
+        }
+
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            // Ensure the user being deleted belongs to the same clinic
+            const { data: targetUser, error: targetError } = await supabase
+                .from('sakhi_clinic_users')
+                .select('clinic_id, is_clinic_admin')
+                .eq('id', id)
+                .single();
+
+            if (targetError || !targetUser) {
+                throw new HttpException({ success: false, error: 'User not found' }, HttpStatus.NOT_FOUND);
+            }
+
+            if (targetUser.clinic_id !== decoded.clinic_id) {
+                throw new HttpException({ success: false, error: 'Cannot remove users outside your clinic' }, HttpStatus.FORBIDDEN);
+            }
+
+            // Prevent deleting another clinic admin or yourself
+            if (targetUser.is_clinic_admin) {
+                throw new HttpException({ success: false, error: 'Cannot remove a Clinic Admin' }, HttpStatus.FORBIDDEN);
+            }
+
+            // Delete the user from sakhi_clinic_users (DB will cascade delete from clinic_staff)
+            const { error } = await supabase
+                .from('sakhi_clinic_users')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+
+            // Invalidate staff cache via background listener
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.USER_REMOVED, new StaffEvent(
+                decoded.clinic_id, actor_id, { action: 'remove_clinic_user', user_id: id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, message: 'Team member removed successfully' };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`DELETE /api/clinic/users/${id}`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

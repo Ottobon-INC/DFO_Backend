@@ -6,9 +6,15 @@ import { ClinicsSupabaseService } from './services/clinics-supabase.service';
 import { ClinicsEncryptionService } from './services/clinics-encryption.service';
 import { ClinicsUtilsService } from './services/clinics-utils.service';
 import { DocumentsService } from './services/documents.service';
+import { StaffCacheService } from './services/staff-cache.service';
+import { RoomAllocationService } from './services/room-allocation.service';
 
 // Guards
 import { ClinicsAuthGuard } from './guards/clinics-auth.guard';
+
+// Processors
+import { AuditEventProcessor } from './listeners/audit-event.processor';
+import { CacheEventProcessor } from './listeners/cache-event.processor';
 
 // Controllers
 import { AppointmentsController } from './controllers/appointments.controller';
@@ -27,17 +33,28 @@ import { PatientPortalController } from './controllers/patient-portal.controller
 import { StaffController } from './controllers/staff.controller';
 import { DocumentsController } from './controllers/documents.controller';
 import { AuditController } from './controllers/audit.controller';
+import { RoomAllocationController } from './controllers/room-allocation.controller';
 
 // Feature Modules
 import { AwsModule } from '../../infrastructure/aws/aws.module';
+import { BullModule } from '@nestjs/bullmq';
+
 @Module({
-    imports: [ConfigModule, AwsModule],
+    imports: [
+        ConfigModule, 
+        AwsModule,
+        BullModule.registerQueue({ name: 'dfo_events_queue' }),
+    ],
     providers: [
         ClinicsSupabaseService,
         ClinicsEncryptionService,
         ClinicsUtilsService,
         DocumentsService,
+        StaffCacheService,
         ClinicsAuthGuard,
+        AuditEventProcessor,
+        CacheEventProcessor,
+        RoomAllocationService,
     ],
     controllers: [
         AppointmentsController,
@@ -56,12 +73,15 @@ import { AwsModule } from '../../infrastructure/aws/aws.module';
         StaffController,
         DocumentsController,
         AuditController,
+        RoomAllocationController,
     ],
     exports: [
         ClinicsSupabaseService,
         ClinicsEncryptionService,
         ClinicsUtilsService,
         DocumentsService,
+        StaffCacheService,
+        RoomAllocationService,
     ],
 })
 export class ClinicsModule {}

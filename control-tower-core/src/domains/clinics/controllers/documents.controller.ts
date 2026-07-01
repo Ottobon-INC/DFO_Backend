@@ -1,4 +1,8 @@
 import { Controller, Post, Body, Logger, HttpException, HttpStatus, UseGuards, Get, Query, Patch, Param, Delete } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
+import { DocumentEvent } from '../../../infrastructure/events/event-payloads';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 import { S3Service } from '../../../infrastructure/aws/s3.service';
@@ -17,7 +21,8 @@ export class DocumentsController {
         private readonly s3Service: S3Service,
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly documentsService: DocumentsService,
-        private readonly utils: ClinicsUtilsService
+        private readonly utils: ClinicsUtilsService,
+        @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue
     ) {}
 
     @Post('upload-ticket')
@@ -125,6 +130,11 @@ export class DocumentsController {
                 this.logger.error('Supabase document register error:', error);
                 throw new HttpException({ success: false, error: 'Database error' }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
+
+            await this.eventsQueue.add(DFO_EVENTS.DOCUMENT_REGISTERED, new DocumentEvent(
+                clinic_id, uploaded_by, data.id,
+                { action: 'register_document', size: file_size, type: document_type, patient_id, name: data.name }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return {
                 success: true,
@@ -287,17 +297,11 @@ export class DocumentsController {
                 throw new HttpException({ success: false, error: 'Database update error' }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
 
-            // 4. Audit Trail
             const actor_id = TenantContext.getUserId();
-            if (actor_id) {
-                await supabase.from('sakhi_audit_logs').insert({
-                    actor_id,
-                    action: 'link_document',
-                    entity_name: 'sakhi_clinic_documents',
-                    entity_id: documentId,
-                    new_values: { patient_id }
-                });
-            }
+            await this.eventsQueue.add(DFO_EVENTS.DOCUMENT_ASSIGNED, new DocumentEvent(
+                clinic_id, actor_id, documentId,
+                { action: 'link_document', patient_id, name: updatedDoc.name }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return {
                 success: true,
@@ -375,17 +379,11 @@ export class DocumentsController {
                 throw new HttpException({ success: false, error: 'Database update error' }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
 
-            // 3. Audit Trail
             const actor_id = TenantContext.getUserId();
-            if (actor_id) {
-                await supabase.from('sakhi_audit_logs').insert({
-                    actor_id,
-                    action: 'unlink_document',
-                    entity_name: 'sakhi_clinic_documents',
-                    entity_id: documentId,
-                    new_values: { previous_patient_id, reason }
-                });
-            }
+            await this.eventsQueue.add(DFO_EVENTS.DOCUMENT_UNASSIGNED, new DocumentEvent(
+                clinic_id, actor_id, documentId,
+                { action: 'unlink_document', reason, previous_patient_id, name: updatedDoc.name }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return {
                 success: true,
@@ -448,17 +446,11 @@ export class DocumentsController {
                 await this.s3Service.deleteFile(document.file_path);
             }
 
-            // 3. Audit Trail
             const actor_id = TenantContext.getUserId();
-            if (actor_id) {
-                await supabase.from('sakhi_audit_logs').insert({
-                    actor_id,
-                    action: 'delete_document',
-                    entity_name: 'sakhi_clinic_documents',
-                    entity_id: documentId,
-                    new_values: { deleted_path: document.file_path }
-                });
-            }
+            await this.eventsQueue.add(DFO_EVENTS.DOCUMENT_DELETED, new DocumentEvent(
+                clinic_id, actor_id, documentId,
+                { action: 'delete_document', deleted_path: document.file_path, name: 'Unknown (Deleted)' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return {
                 success: true,
@@ -557,17 +549,11 @@ export class DocumentsController {
             // Execute the Postgres transaction using our new service
             const result = await this.documentsService.linkNewPatientTransaction(clinic_id, documentId, payload);
 
-            // Audit Trail
             const actor_id = TenantContext.getUserId();
-            if (actor_id) {
-                await supabase.from('sakhi_audit_logs').insert({
-                    actor_id,
-                    action: 'link_new_patient_to_document',
-                    entity_name: 'sakhi_clinic_documents',
-                    entity_id: documentId,
-                    new_values: { patient_id: result.id } // result is now the full patient record, so we use result.id
-                });
-            }
+            await this.eventsQueue.add(DFO_EVENTS.DOCUMENT_ASSIGNED_NEW_PATIENT, new DocumentEvent(
+                clinic_id, actor_id, documentId,
+                { action: 'link_new_patient_to_document', patient_id: result.id, name: 'Unknown' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return {
                 success: true,
