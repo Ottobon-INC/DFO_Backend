@@ -63,6 +63,8 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
+            const displayName = user.name || user.full_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');
+
             const token = jwt.sign(
                 {
                     sub: user.id,
@@ -72,7 +74,7 @@ export class AuthController {
                     name: user.name,
                     clinic_id: user.clinic_id,
                     is_super_admin: user.is_super_admin,
-                    is_clinic_admin: user.is_clinic_admin
+                    is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin'
                 },
                 this.jwtSecret,
                 { expiresIn: this.jwtExpiresIn },

@@ -27,13 +27,13 @@ export class JanmasethuDispatchService {
      * Dispatch an outbound message to a patient's preferred channel.
      * Implements intelligent fallback routing and consent enforcement.
      */
-    async dispatchResponse(channel: string, userId: string, message: string) {
+    async dispatchResponse(channel: string, userId: string, message: string, bypassConsent: boolean = false) {
         this.logger.log(`Dispatching response to ${channel} user ${userId}...`);
 
         try {
             // 1. Consent Auto-Check
             const patient = await this.repository.findDFOPatientByPhone(userId).catch(() => null);
-            if (patient) {
+            if (patient && !bypassConsent) {
                 const consent = await this.consentService.checkConsent({
                     patient_id: patient.id,
                     communication_channel: channel as any,
@@ -48,9 +48,10 @@ export class JanmasethuDispatchService {
                 }
             }
 
-            if (channel === 'whatsapp') {
+            const normalizedChannel = channel?.toLowerCase();
+            if (normalizedChannel === 'whatsapp') {
                 await this.sendWhatsApp(userId, message);
-            } else if (channel === 'web') {
+            } else if (normalizedChannel === 'web') {
                 await axios.post(this.webUrl, { userId, message });
             }
             this.logger.log(`Successfully dispatched message to ${channel}`);

@@ -134,19 +134,35 @@ export class JanmasethuMaintenanceService {
         // 5. SEED APPOINTMENTS (Safe now that Patients/Doctors exist)
         if (existingApps.length === 0 || orphans.length > 0) {
             this.logger.log('Creating initial validated appointments...');
-            await this.repository.createAppointment({
-                patient_id: patientId1,
-                doctor_id: doctorId1,
-                appointment_date: new Date(),
-                status: AppointmentStatus.SCHEDULED
-            });
-            await this.repository.createAppointment({
-                patient_id: patientId2,
-                doctor_id: doctorId2,
-                appointment_date: new Date(Date.now() + 86400000), // Tomorrow
-                status: AppointmentStatus.SCHEDULED
-            });
-            this.logger.log('✅ Appointments seeded.');
+            
+            const hasApp1 = existingApps.some(a => a.patient_id === patientId1 && a.doctor_id === doctorId1);
+            if (!hasApp1) {
+                try {
+                    await this.repository.createAppointment({
+                        patient_id: patientId1,
+                        doctor_id: doctorId1,
+                        appointment_date: new Date(),
+                        status: AppointmentStatus.SCHEDULED
+                    });
+                } catch (e) {
+                    this.logger.warn(`Failed to seed appointment 1: ${e.message}`);
+                }
+            }
+
+            const hasApp2 = existingApps.some(a => a.patient_id === patientId2 && a.doctor_id === doctorId2);
+            if (!hasApp2) {
+                try {
+                    await this.repository.createAppointment({
+                        patient_id: patientId2,
+                        doctor_id: doctorId2,
+                        appointment_date: new Date(Date.now() + 86400000), // Tomorrow
+                        status: AppointmentStatus.SCHEDULED
+                    });
+                } catch (e) {
+                    this.logger.warn(`Failed to seed appointment 2: ${e.message}`);
+                }
+            }
+            this.logger.log('✅ Appointments seeding checked/completed.');
         }
 
         // 6. SEED AUDIT LOGS

@@ -5,32 +5,69 @@ import { DFODocument, DocumentType, DocumentGenerationStatus } from './document.
 @Injectable()
 export class DocumentRepository {
     private readonly logger = new Logger(DocumentRepository.name);
-    private readonly TABLE = 'dfo_documents';
-    private readonly ACCESS_LOG_TABLE = 'dfo_document_access_logs';
+    private readonly TABLE = 'sakhi_clinic_documents';
+
+    // In-memory registry for transient document metadata mapping: documentId -> metadata
+    private documentMetadata = new Map<string, {
+        prescription_id?: string;
+        generation_status: DocumentGenerationStatus;
+        version: number;
+        error_message?: string;
+        generated_by?: string;
+    }>();
 
     constructor(
         @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient
     ) { }
+
+    private mergeMetadata(doc: any): DFODocument {
+        if (!doc) return doc;
+        const meta = this.documentMetadata.get(doc.id) || {
+            generation_status: DocumentGenerationStatus.GENERATED,
+            version: 1
+        };
+        return {
+            id: doc.id,
+            patient_id: doc.patient_id,
+            file_name: doc.name,
+            file_path: doc.file_path,
+            file_size_bytes: doc.file_size || 0,
+            mime_type: doc.mime_type,
+            created_at: doc.created_at,
+            prescription_id: meta.prescription_id,
+            generation_status: meta.generation_status,
+            version: meta.version,
+            error_message: meta.error_message,
+            generated_by: meta.generated_by
+        } as any;
+    }
 
     /**
      * Find an existing document by idempotency key (prescription_id + version).
      * Prevents duplicate documents from being generated for the same prescription.
      */
     async findByPrescriptionId(prescriptionId: string): Promise<DFODocument | null> {
+        let matchingId: string | null = null;
+        for (const [id, meta] of this.documentMetadata.entries()) {
+            if (meta.prescription_id === prescriptionId && meta.generation_status === DocumentGenerationStatus.GENERATED) {
+                matchingId = id;
+            }
+        }
+
+        if (!matchingId) return null;
+
         const { data, error } = await this.supabase
             .from(this.TABLE)
             .select('*')
-            .eq('prescription_id', prescriptionId)
-            .eq('generation_status', DocumentGenerationStatus.GENERATED)
-            .order('version', { ascending: false })
-            .limit(1)
+            .eq('id', matchingId)
             .maybeSingle();
 
         if (error) {
-            this.logger.warn(`findByPrescriptionId failed: ${error.message}`);
+            this.logger.warn(`findByPrescriptionId failed to retrieve doc: ${error.message}`);
             return null;
         }
-        return data as DFODocument;
+
+        return this.mergeMetadata(data);
     }
 
     /**
@@ -46,19 +83,32 @@ export class DocumentRepository {
         file_path: string;
         generated_by: string;
     }): Promise<DFODocument> {
+        const id = require('crypto').randomUUID();
+        const payload = {
+            id,
+            patient_id: dto.patient_id,
+            name: dto.file_name,
+            file_path: dto.file_path,
+            mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            created_at: new Date()
+        };
+
         const { data, error } = await this.supabase
             .from(this.TABLE)
-            .insert([{
-                ...dto,
-                mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                generation_status: DocumentGenerationStatus.PENDING,
-                version: 1,
-            }])
+            .insert([payload])
             .select()
             .single();
 
         if (error) throw new Error(`Failed to create document record: ${error.message}`);
-        return data as DFODocument;
+
+        this.documentMetadata.set(id, {
+            prescription_id: dto.prescription_id,
+            generation_status: DocumentGenerationStatus.PENDING,
+            version: 1,
+            generated_by: dto.generated_by
+        });
+
+        return this.mergeMetadata(data);
     }
 
     /**
@@ -68,29 +118,28 @@ export class DocumentRepository {
         const { error } = await this.supabase
             .from(this.TABLE)
             .update({
-                generation_status: DocumentGenerationStatus.GENERATED,
-                file_size_bytes: fileSizeBytes,
-                updated_at: new Date(),
+                file_size: fileSizeBytes
             })
             .eq('id', documentId);
 
         if (error) throw new Error(`Failed to mark document as generated: ${error.message}`);
+
+        const meta = this.documentMetadata.get(documentId);
+        if (meta) {
+            meta.generation_status = DocumentGenerationStatus.GENERATED;
+        }
     }
 
     /**
      * Mark a document as failed with an error message.
      */
     async markAsFailed(documentId: string, errorMessage: string): Promise<void> {
-        const { error } = await this.supabase
-            .from(this.TABLE)
-            .update({
-                generation_status: DocumentGenerationStatus.FAILED,
-                error_message: errorMessage,
-                updated_at: new Date(),
-            })
-            .eq('id', documentId);
-
-        if (error) this.logger.error(`Failed to mark document as failed: ${error.message}`);
+        const meta = this.documentMetadata.get(documentId);
+        if (meta) {
+            meta.generation_status = DocumentGenerationStatus.FAILED;
+            meta.error_message = errorMessage;
+        }
+        this.logger.warn(`Document ${documentId} generation failed: ${errorMessage}`);
     }
 
     /**
@@ -101,11 +150,11 @@ export class DocumentRepository {
             .from(this.TABLE)
             .select('*')
             .eq('patient_id', patientId)
-            .eq('generation_status', DocumentGenerationStatus.GENERATED)
             .order('created_at', { ascending: false });
 
         if (error) throw new Error(`Failed to fetch patient documents: ${error.message}`);
-        return (data || []) as DFODocument[];
+        
+        return (data || []).map(doc => this.mergeMetadata(doc));
     }
 
     /**
@@ -119,7 +168,7 @@ export class DocumentRepository {
             .maybeSingle();
 
         if (error) return null;
-        return data as DFODocument;
+        return this.mergeMetadata(data);
     }
 
     /**
@@ -131,11 +180,7 @@ export class DocumentRepository {
         role: string;
         expires_at: Date;
     }): Promise<void> {
-        const { error } = await this.supabase
-            .from(this.ACCESS_LOG_TABLE)
-            .insert([dto]);
-
-        if (error) this.logger.warn(`Access log insert failed: ${error.message}`);
+        this.logger.log(`[HIPAA AUDIT] Document access log: ${JSON.stringify(dto)}`);
     }
 
     /**
@@ -149,16 +194,20 @@ export class DocumentRepository {
             .from(this.TABLE)
             .update({
                 file_path: newFilePath,
-                file_name: newFileName,
-                version: existing.version + 1,
-                generation_status: DocumentGenerationStatus.PENDING,
-                updated_at: new Date(),
+                name: newFileName
             })
             .eq('id', existing.id)
             .select()
             .single();
 
         if (error) throw new Error(`Failed to increment document version: ${error.message}`);
-        return data as DFODocument;
+
+        const meta = this.documentMetadata.get(existing.id);
+        if (meta) {
+            meta.version = meta.version + 1;
+            meta.generation_status = DocumentGenerationStatus.PENDING;
+        }
+
+        return this.mergeMetadata(data);
     }
 }

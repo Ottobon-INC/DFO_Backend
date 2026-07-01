@@ -15,7 +15,8 @@ export class JanmasethuRepository {
     private readonly logger = new Logger(JanmasethuRepository.name);
 
     constructor(
-        @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient
+        @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
+        @Inject('ORG_SUPABASE_CLIENT') private readonly orgSupabase: SupabaseClient
     ) { }
 
     // --- THREAD & MESSAGE CORE ---
@@ -34,7 +35,27 @@ export class JanmasethuRepository {
 
         const { data, error } = await query;
         if (error) throw error;
-        return (data || []) as Thread[];
+        
+        const threads = (data || []) as Thread[];
+
+        // Map patient_name and latest_message to each thread dynamically for the dashboard UI
+        const enrichedThreads = await Promise.all(threads.map(async (t) => {
+            const latestMsg = await this.findLatestMessageByThread(t.id);
+            
+            const { data: patient } = await this.orgSupabase
+                .from('sakhi_clinic_patients')
+                .select('name')
+                .eq('mobile', t.user_id)
+                .maybeSingle();
+
+            return {
+                ...t,
+                patient_name: patient?.name || 'Patient ' + t.user_id.substring(0, 5),
+                latest_message: latestMsg?.content || 'No messages yet'
+            } as any;
+        }));
+
+        return enrichedThreads;
     }
 
     async findThreadById(id: string, user?: JanmasethuUserContext): Promise<Thread | null> {
@@ -74,45 +95,81 @@ export class JanmasethuRepository {
         if (error) throw error;
     }
 
+    private mapSakhiToMessage(row: any): Message {
+        return {
+            id: String(row.id),
+            thread_id: row.chat_id || '',
+            sender_id: row.user_id || '',
+            sender_type: row.message_type === 'user' ? 'USER' : (row.message_type === 'sakhi' ? 'AI' : 'HUMAN'),
+            content: row.message_text || '',
+            created_at: new Date(row.created_at),
+        };
+    }
+
     async findMessageById(id: string): Promise<Message | null> {
-        const { data, error } = await this.supabase
-            .from('conversation_messages')
-            .select('*')
-            .eq('id', id)
-            .maybeSingle();
-        if (error) return null;
-        return data as Message;
+        // Since id is an integer/serial in sakhi_conversations_new, parse it if possible, otherwise use string match
+        const parsedId = parseInt(id, 10);
+        const query = this.orgSupabase
+            .from('sakhi_conversations_new')
+            .select('*');
+        
+        const { data, error } = await (isNaN(parsedId) ? query.eq('id', id) : query.eq('id', parsedId)).maybeSingle();
+
+        if (error || !data) return null;
+        return this.mapSakhiToMessage(data);
     }
 
     async createMessage(dto: Partial<Message>): Promise<Message> {
-        const { data, error } = await this.supabase
-            .from('conversation_messages')
-            .insert([dto])
+        const { data, error } = await this.orgSupabase
+            .from('sakhi_conversations_new')
+            .insert([{
+                chat_id: dto.thread_id,
+                user_id: dto.sender_id,
+                message_text: dto.content,
+                message_type: dto.sender_type?.toLowerCase() || 'user',
+                created_at: new Date(),
+            }])
             .select()
             .single();
+
         if (error) throw error;
-        return data as Message;
+        return this.mapSakhiToMessage(data);
     }
 
     async findMessagesByThreadId(threadId: string): Promise<Message[]> {
-        const { data, error } = await this.supabase
-            .from('conversation_messages')
-            .select('*')
-            .eq('thread_id', threadId)
-            .order('created_at', { ascending: true });
+        const thread = await this.findThreadById(threadId);
+        let query = this.orgSupabase
+            .from('sakhi_conversations_new')
+            .select('*');
+        
+        if (thread && thread.user_id) {
+            query = query.eq('user_id', thread.user_id);
+        } else {
+            query = query.eq('chat_id', threadId);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: true });
         if (error) throw error;
-        return data as Message[];
+        return (data || []).map(row => this.mapSakhiToMessage(row));
     }
 
     async findRecentMessages(threadId: string, limit: number): Promise<Message[]> {
-        const { data, error } = await this.supabase
-            .from('conversation_messages')
-            .select('*')
-            .eq('thread_id', threadId)
+        const thread = await this.findThreadById(threadId);
+        let query = this.orgSupabase
+            .from('sakhi_conversations_new')
+            .select('*');
+
+        if (thread && thread.user_id) {
+            query = query.eq('user_id', thread.user_id);
+        } else {
+            query = query.eq('chat_id', threadId);
+        }
+
+        const { data, error } = await query
             .order('created_at', { ascending: false })
             .limit(limit);
         if (error) throw error;
-        return (data || []) as Message[];
+        return (data || []).map(row => this.mapSakhiToMessage(row));
     }
 
     async findLatestMessageByThread(threadId: string): Promise<Message | null> {
@@ -143,6 +200,16 @@ export class JanmasethuRepository {
             .maybeSingle();
         if (error) return null;
         return data as DFOPatient;
+    }
+
+    async findSakhiPatientByPhone(phone: string): Promise<any | null> {
+        const { data, error } = await this.orgSupabase
+            .from('sakhi_clinic_patients')
+            .select('id, name, mobile, clinic_id')
+            .eq('mobile', phone)
+            .maybeSingle();
+        if (error) return null;
+        return data;
     }
 
     async findPatientByResolution(phone?: string, authId?: string): Promise<DFOPatient | null> {
@@ -285,7 +352,7 @@ export class JanmasethuRepository {
     }
 
     async updateAppointment(id: string, dto: any): Promise<void> {
-        const { error } = await this.supabase
+        const { error } = await this.orgSupabase
             .from('sakhi_clinic_appointments')
             .update(dto)
             .eq('id', id);
@@ -293,7 +360,7 @@ export class JanmasethuRepository {
     }
 
     async findPastDueAppointments(now: Date): Promise<DFOAppointment[]> {
-        const { data, error } = await this.supabase
+        const { data, error } = await this.orgSupabase
             .from('sakhi_clinic_appointments')
             .select('*')
             .eq('status', AppointmentStatus.SCHEDULED)
@@ -592,7 +659,7 @@ export class JanmasethuRepository {
         const from = (params.page - 1) * params.limit;
         const to = from + params.limit - 1;
 
-        let query = this.supabase
+        let query = this.orgSupabase
             .from('sakhi_clinic_leads')
             .select('*', { count: 'exact' })
             .order('date_added', { ascending: false })
@@ -612,7 +679,7 @@ export class JanmasethuRepository {
     }
 
     async createLead(payload: any) {
-        const { data, error } = await this.supabase
+        const { data, error } = await this.orgSupabase
             .from('sakhi_clinic_leads')
             .insert(payload)
             .select()
@@ -630,7 +697,7 @@ export class JanmasethuRepository {
         const cutoff = new Date();
         cutoff.setHours(cutoff.getHours() - hours);
 
-        const { data, error } = await this.supabase
+        const { data, error } = await this.orgSupabase
             .from('sakhi_clinic_leads')
             .select('*')
             .eq('status', 'New Inquiry')
@@ -644,7 +711,7 @@ export class JanmasethuRepository {
         const updates: any = { status };
         if (followUpNotes) updates.inquiry = followUpNotes;
 
-        const { data, error } = await this.supabase
+        const { data, error } = await this.orgSupabase
             .from('sakhi_clinic_leads')
             .update(updates)
             .eq('id', leadId)
@@ -728,7 +795,7 @@ export class JanmasethuRepository {
     // --- LEADS & ENGAGEMENT ---
 
     async findLeadById(id: string) {
-        const { data, error } = await this.supabase
+        const { data, error } = await this.orgSupabase
             .from('sakhi_clinic_leads')
             .select('*')
             .eq('id', id)

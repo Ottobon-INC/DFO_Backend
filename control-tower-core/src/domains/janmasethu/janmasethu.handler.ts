@@ -11,7 +11,8 @@ import { RealtimeEventsController } from './api/realtime-events.controller';
 import { EngagementEngineService } from './engagement-engine/engine.service';
 import { JanmasethuGuardrailService } from './risk-engine/janmasethu-guardrails';
 import { EmergencyHotlineService } from './utils/emergency-hotline.service';
-
+import { JanmasethuDispatchService } from './channel/janmasethu-dispatch.service';
+import { ConsentRepository } from './consent/consent.repository';
 @Injectable()
 export class JanmasethuHandler {
     private readonly logger = new Logger(JanmasethuHandler.name);
@@ -25,6 +26,8 @@ export class JanmasethuHandler {
         private readonly engagementEngine: EngagementEngineService,
         private readonly guardrails: JanmasethuGuardrailService,
         private readonly hotline: EmergencyHotlineService,
+        private readonly dispatchService: JanmasethuDispatchService,
+        private readonly consentRepository: ConsentRepository,
     ) { }
 
     /**
@@ -73,6 +76,59 @@ export class JanmasethuHandler {
             });
         }
 
+        // --- CONVERSATIONAL CONSENT INTERCEPTOR ---
+        const sakhiPatient = await this.repository.findSakhiPatientByPhone(user_id);
+        
+        if (sakhiPatient && sakhiPatient.clinic_id) {
+            const consentRecord = await this.consentRepository.getConsentByPatientId(sakhiPatient.id);
+            
+            if (!consentRecord) {
+                const lowerMsg = message.trim().toLowerCase();
+                const isYes = lowerMsg === 'yes' || lowerMsg === 'i agree' || lowerMsg === 'y';
+                const isNo = lowerMsg === 'no' || lowerMsg === 'i decline' || lowerMsg === 'n';
+
+                if (isYes) {
+                    // Opt-in
+                    await this.consentRepository.saveConsent(sakhiPatient.id, sakhiPatient.clinic_id, {
+                        allowed_channels: { whatsapp: true, sms: true, email: false, call: false },
+                        quiet_hours: { start_time: "22:00", end_time: "06:00" },
+                        allowed_message_types: ["alert", "update", "reminder"]
+                    });
+                    await this.dispatchService.dispatchResponse(
+                        event.channel || 'whatsapp', 
+                        user_id, 
+                        "Great, thanks! How can we help you today?",
+                        true // bypassConsent
+                    );
+                    return; // Stop processing this initial YES message
+                } else if (isNo) {
+                    // Opt-out
+                    await this.consentRepository.saveConsent(sakhiPatient.id, sakhiPatient.clinic_id, {
+                        allowed_channels: { whatsapp: false, sms: false, email: false, call: false },
+                        quiet_hours: { start_time: "00:00", end_time: "23:59" },
+                        allowed_message_types: []
+                    });
+                await this.dispatchService.dispatchResponse(
+                    event.channel || 'whatsapp', 
+                    user_id, 
+                    "No problem, we won't send you updates here. If you need anything in the future, just let us know!",
+                    true // bypassConsent
+                );
+                return; // Stop processing this NO message
+            } else {
+                // First interaction, no consent record, didn't reply yes/no
+                await this.dispatchService.dispatchResponse(
+                    event.channel || 'whatsapp', 
+                    user_id, 
+                    "Hi! Welcome to Janmasethu! Can we send you quick health updates and reminders here? Reply *YES* or *NO*.",
+                    true // bypassConsent
+                );
+                return; // Block thread progression until they answer
+            }
+            }
+        }
+        // --- END INTERCEPTOR ---
+
         // 3. Fetch Thread & Track Previous State
         let thread = await this.repository.findThreadById(thread_id);
         const previousStatus = thread?.status || 'green';
@@ -110,7 +166,7 @@ export class JanmasethuHandler {
         const msg = await this.repository.createMessage({
             id: message_id,
             thread_id,
-            sender_id: user_id,
+            sender_id: sakhiPatient?.id || patient.id,
             sender_type: senderType,
             content: message,
         });

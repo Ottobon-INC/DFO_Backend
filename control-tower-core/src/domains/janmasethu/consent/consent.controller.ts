@@ -43,7 +43,7 @@ export class ConsentController {
   @Post('/consent')
   async updateConsent(@Body() request: ConsentSaveRequest): Promise<{ success: boolean }> {
     try {
-      const success = await this.consentService.saveConsent(request.patient_id, request.preferences);
+      const success = await this.consentService.saveConsent(request.patient_id, request.clinic_id, request.preferences);
       return { success };
     } catch (error) {
       throw new InternalServerErrorException(

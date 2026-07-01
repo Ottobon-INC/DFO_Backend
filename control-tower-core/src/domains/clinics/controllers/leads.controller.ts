@@ -57,6 +57,14 @@ export class LeadsController {
             const body = normalizeLead(rawBody);
             const name = tv(body.name); const phone = tv(body.phone);
             if (!name || !phone) throw new HttpException({ success: false, error: 'name and phone are required' }, HttpStatus.BAD_REQUEST);
+            
+            // Strict number format check (supports 10-15 digits, optional leading +)
+            const phoneStr = String(phone).trim();
+            const isValidPhone = /^\+?[1-9]\d{9,14}$/.test(phoneStr);
+            if (!isValidPhone) {
+                throw new HttpException({ success: false, error: 'Invalid phone number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
+            }
+            
             const payload = this.utils.sanitizePayload({
                 name, phone, date_added: tv(body.date_added), status: normalizeStatus(tv(body.status)),
                 age: tv(body.age), gender: tv(body.gender), source: tv(body.source), inquiry: tv(body.inquiry),

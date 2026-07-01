@@ -64,6 +64,13 @@ export class PatientsController {
             if (!name || !mobile) {
                 throw new HttpException({ success: false, error: 'name and mobile (or phone) are required' }, HttpStatus.BAD_REQUEST);
             }
+            
+            // Strict number format check (supports 10-15 digits, optional leading +)
+            const mobileStr = String(mobile).trim();
+            const isValidMobile = /^\+?[1-9]\d{9,14}$/.test(mobileStr);
+            if (!isValidMobile) {
+                throw new HttpException({ success: false, error: 'Invalid mobile number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
+            }
 
             const { data: existing, error: existingError } = await supabase
                 .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', mobile).maybeSingle();

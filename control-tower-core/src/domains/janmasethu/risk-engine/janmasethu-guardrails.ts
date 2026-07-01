@@ -42,10 +42,10 @@ export class JanmasethuGuardrailService {
             return { permitted: false, reason: 'DOCTOR_TAKEOVER_ACTIVE_AI_SAFETY_MUTE' };
         }
 
-        // 2. SOFT BLOCK: Last person to speak was a doctor.
+        // 2. SOFT BLOCK: Last person to speak was a human (doctor, nurse, staff).
         // We wait for the patient to reply before the AI can support again.
-        if (lastActorType === 'DOCTOR' || lastActorType === 'STAFF') {
-            this.logger.debug(`AI PAUSED: Waiting for patient to reply to the doctor's message.`);
+        if (lastActorType === 'DOCTOR' || lastActorType === 'STAFF' || lastActorType === 'HUMAN') {
+            this.logger.debug(`AI PAUSED: Waiting for patient to reply to the clinician's message.`);
             return { permitted: false, reason: 'WAITING_FOR_PATIENT_RESPONSE_PREVENT_AI_INTERRUPT' };
         }
 

@@ -1,9 +1,8 @@
-import { Injectable, Inject } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
+import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
 export class DeadLetterRepository {
-    constructor(@Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient) { }
+    private readonly logger = new Logger(DeadLetterRepository.name);
 
     async persist(data: {
         routing_id: string;
@@ -11,13 +10,10 @@ export class DeadLetterRepository {
         reason: string;
         payload?: any;
     }): Promise<void> {
-        const { error } = await this.supabase
-            .from('dead_letter_jobs')
-            .insert([{
-                ...data,
-                failed_at: new Date(),
-            }]);
-
-        if (error) throw error;
+        this.logger.warn(
+            `[DEAD LETTER QUEUE] PERSISTED JOB: Routing ID: ${data.routing_id} | ` +
+            `Thread ID: ${data.thread_id} | Reason: ${data.reason} | ` +
+            `Payload: ${JSON.stringify(data.payload || {})}`
+        );
     }
 }

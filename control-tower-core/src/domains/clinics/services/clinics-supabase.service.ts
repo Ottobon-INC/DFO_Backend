@@ -9,11 +9,11 @@ export class ClinicsSupabaseService {
     private client: SupabaseClient;
 
     constructor(private readonly configService: ConfigService) {
-        const url = this.configService.get<string>('SUPABASE_URL') ?? this.configService.get<string>('app.supabase.url');
-        const key = this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY') ?? this.configService.get<string>('SUPABASE_KEY') ?? this.configService.get<string>('app.supabase.key');
+        const url = this.configService.get<string>('ORG_SUPABASE_URL') ?? this.configService.get<string>('app.orgSupabase.url') ?? this.configService.get<string>('SUPABASE_URL') ?? this.configService.get<string>('app.supabase.url');
+        const key = this.configService.get<string>('ORG_SUPABASE_SERVICE_ROLE_KEY') ?? this.configService.get<string>('ORG_SUPABASE_KEY') ?? this.configService.get<string>('app.orgSupabase.key') ?? this.configService.get<string>('SUPABASE_SERVICE_ROLE_KEY') ?? this.configService.get<string>('SUPABASE_KEY') ?? this.configService.get<string>('app.supabase.key');
 
         if (!url || !key) {
-            this.logger.error('Supabase credentials missing (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)');
+            this.logger.error('Supabase credentials missing (SUPABASE_URL / SUPABASE_KEY / SUPABASE_SERVICE_ROLE_KEY)');
             throw new Error('Supabase credentials are missing');
         }
 

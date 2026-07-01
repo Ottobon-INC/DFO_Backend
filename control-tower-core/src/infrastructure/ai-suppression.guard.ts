@@ -22,9 +22,10 @@ export class AISuppressionGuard implements CanActivate {
         // TAKEOVER SUPPRESSION: If thread is owned by HUMAN or explicitly locked.
         const isHumanOwned = thread.ownership !== OwnershipType.AI;
         const isLocked = thread.is_locked;
+        const isSuppressed = (thread as any).ai_suppressed;
 
-        if (isEmergency || isHumanOwned || isLocked) {
-            this.logger.warn(`AI processing suppressed for ${threadId}: emergency=${isEmergency}, humanOwned=${isHumanOwned}, locked=${isLocked}`);
+        if (isEmergency || isHumanOwned || isLocked || isSuppressed) {
+            this.logger.warn(`AI processing suppressed for ${threadId}: emergency=${isEmergency}, humanOwned=${isHumanOwned}, locked=${isLocked}, suppressed=${isSuppressed}`);
             throw new ForbiddenException('AI processing suppressed due to clinical priority or human takeover');
         }
 

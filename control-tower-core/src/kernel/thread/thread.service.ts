@@ -57,8 +57,8 @@ export class ThreadService {
      */
     async validateAIAction(threadId: string): Promise<Thread> {
         const thread = await this.getThread(threadId);
-        if (thread.ownership !== 'AI' || thread.is_locked) {
-            this.logger.warn(`AI action suppressed for thread ${threadId}: ownership=${thread.ownership}, locked=${thread.is_locked}`);
+        if (thread.ownership !== 'AI' || thread.is_locked || (thread as any).ai_suppressed) {
+            this.logger.warn(`AI action suppressed for thread ${threadId}: ownership=${thread.ownership}, locked=${thread.is_locked}, suppressed=${(thread as any).ai_suppressed}`);
             throw new AISuppressionException();
         }
         return thread;

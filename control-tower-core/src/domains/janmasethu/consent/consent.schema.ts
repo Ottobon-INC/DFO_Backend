@@ -32,6 +32,7 @@ export const ConsentCheckResponseSchema = z.object({
 
 export const ConsentSaveRequestSchema = z.object({
   patient_id: z.string().uuid(),
+  clinic_id: z.string().uuid(),
   preferences: ConsentPreferencesSchema,
 });
 
