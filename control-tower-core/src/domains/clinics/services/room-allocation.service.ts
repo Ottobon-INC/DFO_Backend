@@ -318,15 +318,19 @@ export class RoomAllocationService {
         const { data: patient } = await supabase.from('sakhi_clinic_patients').select('id').eq('id', patient_id).eq('clinic_id', clinic_id).single();
         if (!patient) throw new HttpException('Invalid patient', HttpStatus.BAD_REQUEST);
 
-        // 2. Validate bed belongs to clinic and get its rate via category
-        const { data: bed } = await supabase
+        // 2. Validate bed exists globally to enforce strict 403 on cross-tenant attempts
+        const { data: bedCheck } = await supabase
             .from('sakhi_clinic_beds')
             .select('id, status, sakhi_clinic_rooms!inner(clinic_id, sakhi_clinic_room_categories(daily_rate))')
             .eq('id', bed_id)
-            .eq('sakhi_clinic_rooms.clinic_id', clinic_id)
             .single();
         
-        if (!bed) throw new HttpException('Invalid bed', HttpStatus.BAD_REQUEST);
+        if (!bedCheck) throw new HttpException('Invalid bed', HttpStatus.BAD_REQUEST);
+        if ((bedCheck as any).sakhi_clinic_rooms?.clinic_id !== clinic_id) {
+            throw new HttpException('Forbidden: Cannot assign a patient to a bed belonging to another clinic', HttpStatus.FORBIDDEN);
+        }
+        
+        const bed = bedCheck;
         if (bed.status === 'occupied') throw new HttpException('Bed is already occupied', HttpStatus.CONFLICT);
 
         // Need rate snapshot
@@ -344,7 +348,9 @@ export class RoomAllocationService {
         });
 
         if (rpcError) {
-             if (rpcError.code === '23505') throw new HttpException('Bed is already assigned or patient is already admitted to a bed', HttpStatus.CONFLICT);
+             if (rpcError.code === '23505' || rpcError.message?.includes('duplicate key value violates unique constraint')) {
+                 throw new HttpException('Bed is already assigned or patient is already admitted to a bed', HttpStatus.CONFLICT);
+             }
              throw new HttpException(rpcError.message, HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
@@ -445,7 +451,9 @@ export class RoomAllocationService {
         });
 
         if (rpcError) {
-             if (rpcError.code === '23505') throw new HttpException('New bed is already assigned', HttpStatus.CONFLICT);
+             if (rpcError.code === '23505' || rpcError.message?.includes('duplicate key value violates unique constraint')) {
+                 throw new HttpException('New bed is already assigned', HttpStatus.CONFLICT);
+             }
              throw new HttpException(rpcError.message, HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
