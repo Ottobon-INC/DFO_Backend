@@ -7,6 +7,7 @@ import {
     DFOPatient, DFOAppointment, DFOConsultation, JourneyStage,
     AppointmentStatus, ConsultationStatus, DFOPrescription, DFOMedicalReport
 } from './dfo.types';
+import { OwnershipType, ThreadStatus } from '../../types';
 
 import { EngagementService } from './engagement/engagement.service';
 import { isValidPhoneNumber } from './janmasethu.leads.service';
@@ -144,6 +145,28 @@ export class JanmasethuDFOService implements OnModuleInit {
             status: ConsultationStatus.CLOSED,
             end_time: new Date()
         });
+
+        // Transition ownership back to AI (unlock thread and set status to GREEN/resolved)
+        const threadId = await this.repository.findThreadByConsultationId(consultationId).catch(() => null);
+        if (threadId) {
+            const thread = await this.repository.findThreadById(threadId);
+            if (thread) {
+                await this.repository.updateThreadAtomic(threadId, thread.version, {
+                    ownership: OwnershipType.AI,
+                    is_locked: false,
+                    status: ThreadStatus.GREEN
+                });
+
+                // Log transition audit event
+                await this.repository.insertAuditLog({
+                    thread_id: threadId,
+                    actor_id: 'system',
+                    actor_type: 'SYSTEM',
+                    event_type: 'THREAD_RESOLVED',
+                    payload: { notes, action: 'CLOSE_CONSULTATION_TRANSITION_TO_AI' }
+                });
+            }
+        }
     }
 
     async getDFOAnalytics() {

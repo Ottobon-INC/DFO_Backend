@@ -27,6 +27,10 @@ export class JanmasethuRepository {
             .select('*')
             .eq('domain', JANMASETHU_DOMAIN);
 
+        if (user.clinic_id) {
+            query = query.eq('clinic_id', user.clinic_id);
+        }
+
         if (user.role === JanmasethuUserRole.DOCTOR) {
             query = query.eq('status', 'red');
         } else if (user.role === JanmasethuUserRole.NURSE) {
@@ -42,11 +46,16 @@ export class JanmasethuRepository {
         const enrichedThreads = await Promise.all(threads.map(async (t) => {
             const latestMsg = await this.findLatestMessageByThread(t.id);
             
-            const { data: patient } = await this.orgSupabase
+            let patientQuery = this.orgSupabase
                 .from('sakhi_clinic_patients')
                 .select('name')
-                .eq('mobile', t.user_id)
-                .maybeSingle();
+                .eq('mobile', t.user_id);
+            
+            if (user.clinic_id) {
+                patientQuery = patientQuery.eq('clinic_id', user.clinic_id);
+            }
+            
+            const { data: patient } = await patientQuery.maybeSingle();
 
             return {
                 ...t,
@@ -59,11 +68,16 @@ export class JanmasethuRepository {
     }
 
     async findThreadById(id: string, user?: JanmasethuUserContext): Promise<Thread | null> {
-        const { data, error } = await this.supabase
+        let query = this.supabase
             .from('conversation_threads')
             .select('*')
-            .eq('id', id)
-            .maybeSingle();
+            .eq('id', id);
+
+        if (user?.clinic_id) {
+            query = query.eq('clinic_id', user.clinic_id);
+        }
+
+        const { data, error } = await query.maybeSingle();
 
         if (error) return null;
         return data as Thread;
@@ -629,6 +643,18 @@ export class JanmasethuRepository {
         return data || [];
     }
 
+    async releaseAppointmentSlot(doctorId: string, date: Date): Promise<void> {
+        const { error } = await this.supabase
+            .from('dfo_availability_slots')
+            .update({ is_booked: false })
+            .eq('doctor_id', doctorId)
+            .eq('start_time', date.toISOString());
+        if (error) {
+            this.logger.error(`Failed to release availability slot: ${error.message}`);
+            throw error;
+        }
+    }
+
     async findDoctorAvailability(doctorId?: string): Promise<DFODoctor[]> {
         let query = this.supabase
             .from('dfo_doctors')
@@ -834,5 +860,16 @@ export class JanmasethuRepository {
             .single();
         if (error) return null;
         return data.thread_id;
+    }
+
+    async findHqClinic() {
+        const { data, error } = await this.orgSupabase
+            .from('clinics')
+            .select('id')
+            .eq('name', 'HQ / Test Clinic')
+            .limit(1)
+            .maybeSingle();
+        if (error) return null;
+        return data;
     }
 }

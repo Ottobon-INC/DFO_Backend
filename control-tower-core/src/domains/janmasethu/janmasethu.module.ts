@@ -51,6 +51,7 @@ import { SupportEngagementModule } from './support-engagement/support-engagement
 import { ThreadOperationsController } from './thread-operations.controller';
 import { ThreadOperationsRepository } from './thread-operations.repository';
 import { PiiDecrypterService } from './pii-decrypter.service';
+import { JanmasethuAssignmentEngine } from './janmasethu-assignment.engine';
 
 @Module({
     imports: [
@@ -100,6 +101,7 @@ import { PiiDecrypterService } from './pii-decrypter.service';
         JanmasethuMaintenanceService,
         PiiDecrypterService,
         ThreadOperationsRepository,
+        JanmasethuAssignmentEngine,
     ],
     controllers: [
         JanmasethuController,
@@ -124,6 +126,7 @@ import { PiiDecrypterService } from './pii-decrypter.service';
         JanmasethuEncryptionService,
         JanmasethuRbacService,
         EmergencyHotlineService,
+        JanmasethuAssignmentEngine,
     ],
 })
 export class JanmasethuModule implements OnModuleInit {

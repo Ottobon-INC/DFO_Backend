@@ -366,7 +366,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         const enriched = await Promise.all(visibleThreads.map(async (t) => {
             const { data: patient } = await this.orgSupabase
                 .from('sakhi_clinic_patients')
-                .select('name')
+                .select('id, name')
                 .eq('mobile', t.user_id)
                 .maybeSingle();
 
@@ -375,7 +375,8 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
                 current_owner_type: t.current_owner_type || t.assigned_role || ((t.status === 'AI_ACTIVE' || t.status === 'active') ? 'AI' : null),
                 current_owner_id: t.assigned_user_id || null,
                 current_owner_name: userNameMap.get(t.assigned_user_id) || null,
-                patient_name: patient?.name || 'Patient ' + (t.user_id ? t.user_id.substring(0, 5) : 'Unknown')
+                patient_name: patient?.name || 'Patient ' + (t.user_id ? t.user_id.substring(0, 5) : 'Unknown'),
+                patient_id: patient?.id || null
             };
         }));
         return enriched;
@@ -392,7 +393,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
         const { data: patient } = await this.orgSupabase
             .from('sakhi_clinic_patients')
-            .select('name')
+            .select('id, name')
             .eq('mobile', data.user_id)
             .maybeSingle();
 
@@ -416,7 +417,8 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             current_owner_type: data.assigned_role,
             current_owner_id: data.assigned_user_id || null,
             current_owner_name: ownerName,
-            patient_name: patient?.name || 'Patient ' + (data.user_id ? data.user_id.substring(0, 5) : 'Unknown')
+            patient_name: patient?.name || 'Patient ' + (data.user_id ? data.user_id.substring(0, 5) : 'Unknown'),
+            patient_id: patient?.id || null
         };
     }
 
@@ -667,5 +669,129 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
                 last_seen_at: u.last_seen_at || null
             };
         });
+    }
+
+    /**
+     * Gap 6 + Gap 7: Operator & Doctor Workspace Context
+     * Reads sakhi_chat_states for the thread's phone number and returns
+     * the booking context (hospital, doctor, slot, stage, notes, lead info).
+     */
+    async getBookingContext(threadId: string): Promise<any> {
+        // 1. Get the thread to find the patient phone number (user_id)
+        const { data: thread, error: threadError } = await this.supabase
+            .from('conversation_threads')
+            .select('user_id, clinic_id')
+            .eq('id', threadId)
+            .maybeSingle();
+
+        if (threadError || !thread) {
+            this.logger.warn(`getBookingContext: thread ${threadId} not found`);
+            return null;
+        }
+
+        const phoneNumber = thread.user_id;
+        const clinicId    = thread.clinic_id;
+
+        // 2. Get sakhi_chat_states context for this patient (booking state machine data)
+        let chatContext: any = {};
+        try {
+            const { data: stateRows } = await this.orgSupabase
+                .from('sakhi_chat_states')
+                .select('context')
+                .eq('user_id', phoneNumber)
+                .maybeSingle();
+            chatContext = stateRows?.context || {};
+        } catch (e) {
+            this.logger.warn(`getBookingContext: failed to read sakhi_chat_states: ${e.message}`);
+        }
+
+        // 3. Get patient profile from sakhi_users
+        let patientProfile: any = {};
+        try {
+            const { data: userRows } = await this.orgSupabase
+                .from('sakhi_users')
+                .select('name, gender, location, zip_code')
+                .eq('phone_number', phoneNumber)
+                .maybeSingle();
+            patientProfile = userRows || {};
+        } catch (e) {
+            this.logger.warn(`getBookingContext: failed to read sakhi_users: ${e.message}`);
+        }
+
+        // 4. Get lead data from sakhi_clinic_leads
+        let leadData: any = {};
+        try {
+            const { data: leadRows } = await this.orgSupabase
+                .from('sakhi_clinic_leads')
+                .select('id, status, source, problem, date_added')
+                .eq('phone', phoneNumber)
+                .eq('clinic_id', clinicId)
+                .order('date_added', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+            leadData = leadRows || {};
+        } catch (e) {
+            this.logger.warn(`getBookingContext: failed to read leads: ${e.message}`);
+        }
+
+        // 5. Get appointment data
+        let appointmentData: any = {};
+        const apptId = chatContext.appointment_id;
+        if (apptId) {
+            try {
+                const { data: apptRows } = await this.orgSupabase
+                    .from('sakhi_clinic_appointments')
+                    .select('id, doctor_name, doctor_id, appointment_date, appointment_time, appointment_display, status')
+                    .eq('id', apptId)
+                    .maybeSingle();
+                appointmentData = apptRows || {};
+            } catch (e) {
+                this.logger.warn(`getBookingContext: failed to read appointment: ${e.message}`);
+            }
+        }
+
+        // 6. Get operator notes for doctor workspace
+        let operatorNotes: any[] = [];
+        try {
+            const { data: noteRows } = await this.supabase
+                .from('sakhi_clinic_patient_notes')
+                .select('note, created_by, created_at')
+                .eq('clinic_id', clinicId)
+                .order('created_at', { ascending: false })
+                .limit(10);
+            operatorNotes = noteRows || [];
+        } catch (e) {
+            this.logger.warn(`getBookingContext: failed to read patient notes: ${e.message}`);
+        }
+
+        return {
+            patient: {
+                name:     patientProfile.name || `Patient ${phoneNumber.slice(-5)}`,
+                gender:   patientProfile.gender || '',
+                location: patientProfile.location || '',
+                phone:    phoneNumber,
+            },
+            booking: {
+                stage:         chatContext.booking_stage || 'UNKNOWN',
+                hospital:      chatContext.selected_clinic_name || '',
+                hospital_id:   chatContext.selected_clinic_id || clinicId,
+                doctor:        chatContext.selected_doctor || appointmentData.doctor_name || '',
+                doctor_id:     chatContext.selected_doctor_id || appointmentData.doctor_id || '',
+                date:          chatContext.selected_date || appointmentData.appointment_date || '',
+                slot:          chatContext.selected_slot || appointmentData.appointment_time || '',
+                display_time:  appointmentData.appointment_display || '',
+                appointment_id: chatContext.appointment_id || '',
+                appointment_status: appointmentData.status || '',
+            },
+            lead: {
+                id:         leadData.id || chatContext.lead_id || '',
+                status:     leadData.status || '',
+                problem:    leadData.problem || chatContext.required_speciality || '',
+                source:     leadData.source || 'Whatsapp-Sakhi',
+                date_added: leadData.date_added || '',
+            },
+            conversation_context: chatContext.conversation_context || 'HOSPITAL_AI',
+            operator_notes:       operatorNotes,
+        };
     }
 }

@@ -380,7 +380,9 @@ export class JanmasethuController {
     async createLead(@Body() payload: any, @Request() req: any) {
         const ctx = this.getUserContext(req);
         await this.auditService.logPIIAccess(ctx.id, ctx.role, 'SYSTEM', 'REGISTERED_NEW_LEAD');
-        return this.leadsService.createLead(payload);
+        const lead = await this.leadsService.createLead(payload);
+        await this.auditService.logClinicalUpdate(ctx.id, 'LEAD_CREATED', lead.id || 'new-lead', { phone: payload.phone, name: payload.name });
+        return lead;
     }
 
     @Post('leads/:id/convert')

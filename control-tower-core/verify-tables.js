@@ -3,23 +3,39 @@ const fs = require('fs');
 const path = require('path');
 
 // Load environment variables manually
-const envPath = path.join(__dirname, '.env', 'development.env');
+let envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath) && fs.lstatSync(envPath).isDirectory()) {
+    envPath = path.join(envPath, 'development.env');
+}
 const envContent = fs.readFileSync(envPath, 'utf8');
 const env = {};
 envContent.split('\n').forEach(line => {
     const parts = line.split('=');
-    if (parts.length === 2) env[parts[0].trim()] = parts[1].trim();
+    if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const value = parts.slice(1).join('=').trim();
+        env[key] = value;
+    }
 });
 
-const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
+const supabase = createClient(
+    env.SUPABASE_URL || process.env.SUPABASE_URL,
+    env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY
+);
 
 async function verifyTables() {
-    console.log('🚀 Starting CRUD Verification for New Tables...');
-
-    try {
+    console.log('🚀 Starting CRUD Verification for New Tables...');    try {
         const crypto = require('crypto');
-        const threadId = crypto.randomUUID();
+        
+        // Fetch active clinic_id
+        const { data: clinics, error: clinicError } = await supabase.from('clinics').select('id').limit(1);
+        if (clinicError || !clinics || clinics.length === 0) {
+            throw new Error(`Failed to find any active clinic. Run migrations first. Error: ${clinicError?.message}`);
+        }
+        const clinicId = clinics[0].id;
+        console.log(`ℹ️ Using Clinic ID: ${clinicId}`);
 
+        const threadId = crypto.randomUUID();
         const userId = crypto.randomUUID();
 
         // Ensure parent exists
@@ -30,7 +46,8 @@ async function verifyTables() {
             channel: 'whatsapp',
             status: 'green',
             version: 1,
-            ownership: 'AI'
+            ownership: 'AI',
+            clinic_id: clinicId
         }]);
 
         if (upsertError) {
@@ -51,7 +68,7 @@ async function verifyTables() {
         // 3. Test: dfo_summaries (CREATE & READ)
         const { error: e2 } = await supabase.from('dfo_summaries').insert([{
             thread_id: threadId,
-            summary: 'Verified CRUD logic works.'
+            summary_text: 'Verified CRUD logic works.'
         }]);
         if (e2) throw new Error(`Summaries failed: ${e2.message}`);
         console.log('✅ dfo_summaries: CRUD Success');
@@ -70,6 +87,7 @@ async function verifyTables() {
         // 5. Test: dfo_support_tickets (CREATE, READ, UPDATE, DELETE)
         const { data: ticket, error: e4 } = await supabase.from('dfo_support_tickets').insert([{
             thread_id: threadId,
+            clinic_id: clinicId,
             category: 'Emotional Support',
             priority: 'HIGH',
             status: 'OPEN',

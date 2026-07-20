@@ -13,11 +13,26 @@ export class JwtAuthGuard implements CanActivate {
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest();
+
+        // System service token bypass — MUST be set via SUPER_ADMIN_SECRET env var.
+        // If env var is absent, the bypass is disabled to fail securely.
+        const systemToken = request.headers['x-system-token'];
+        const superSecret = process.env.SUPER_ADMIN_SECRET;
+        if (superSecret && systemToken && systemToken === superSecret) {
+            request.user = {
+                id: 'system-agent',
+                email: 'system-agent@janmasethu.com',
+                role: JanmasethuUserRole.CRO,
+                domain: 'janmasethu',
+                clinicId: null,
+                clinic_id: null,
+            };
+            return true;
+        }
+
         const authHeader = request.headers.authorization;
 
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            // Fallback for current testing if no header is provided (optional, but safer to enforce)
-            // For now, let's enforce it.
             throw new UnauthorizedException('Missing or invalid Authorization header');
         }
 
@@ -31,6 +46,8 @@ export class JwtAuthGuard implements CanActivate {
                 email: payload.email,
                 role: (payload.role as string || '').toUpperCase() as JanmasethuUserRole,
                 domain: payload.domain,
+                clinicId: payload.clinicId || payload.clinic_id || null,
+                clinic_id: payload.clinicId || payload.clinic_id || null,
             };
             return true;
         } catch (error) {
