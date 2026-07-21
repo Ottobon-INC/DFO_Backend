@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
@@ -131,6 +131,392 @@ export class PatientsController {
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`GET /api/patients/${id}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get(':id/dashboard-metrics')
+    async getPatientDashboardData(@Param('id') id: string) {
+        if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            // Fire all 4 requests in parallel to minimize latency
+            const [vitalsRes, allergiesRes, historyRes, treatmentsRes] = await Promise.all([
+                supabase.from('sakhi_clinic_patient_vitals')
+                    .select('vital_type, vital_value, recorded_at')
+                    .eq('patient_id', id)
+                    .order('recorded_at', { ascending: false }).limit(5),
+                supabase.from('sakhi_clinic_allergies')
+                    .select('allergy_name, severity')
+                    .eq('patient_id', id).eq('clinic_id', clinic_id),
+                supabase.from('sakhi_clinic_medical_history')
+                    .select('condition_name, status')
+                    .eq('patient_id', id).eq('clinic_id', clinic_id),
+                supabase.from('sakhi_clinic_treatments')
+                    .select('treatment_name, status')
+                    .eq('patient_id', id).eq('clinic_id', clinic_id)
+                    .in('status', ['PLANNED', 'IN_PROGRESS'])
+            ]);
+
+            // Data Handling & Empty Fallbacks
+            return {
+                success: true,
+                data: {
+                    vitals: vitalsRes.data?.length ? vitalsRes.data : [{ vital_type: 'System', vital_value: 'No Vitals Logged' }],
+                    allergies: allergiesRes.data?.length ? allergiesRes.data : [{ allergy_name: 'No Known Allergies [NKA]' }],
+                    medicalHistory: historyRes.data?.length ? historyRes.data : [{ condition_name: 'No Prior Medical History' }],
+                    ongoingTreatments: treatmentsRes.data?.length ? treatmentsRes.data : [{ treatment_name: 'No Active Treatments' }]
+                }
+            };
+        } catch (error: any) {
+            this.logger.error(`GET /api/patients/${id}/dashboard-metrics`, error);
+            throw new HttpException('Parallel Fetch Failed', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post(':id/vitals')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async addVitals(@Param('id') id: string, @Body() body: any) {
+        if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            if (!body?.vital_type || !body?.value) {
+                throw new HttpException({ success: false, error: 'vital_type and value are required' }, HttpStatus.BAD_REQUEST);
+            }
+            
+            const payload = {
+                patient_id: id,
+                clinic_id: clinic_id,
+                appointment_id: body.appointment_id || null,
+                vital_type: body.vital_type,
+                vital_value: String(body.value),
+                recorded_at: body.recorded_at || new Date().toISOString()
+            };
+
+            const { data, error } = await supabase.from('sakhi_clinic_patient_vitals').insert(payload).select().single();
+            if (error) throw error;
+            
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'add_vital', vital_type: body.vital_type }
+            ));
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/patients/${id}/vitals`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete(':id/vitals/:vitalId')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async deleteVitals(@Param('id') id: string, @Param('vitalId') vitalId: string) {
+        if (!this.utils.isUuid(id) || !this.utils.isUuid(vitalId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const { error } = await supabase.from('sakhi_clinic_patient_vitals')
+                .delete()
+                .eq('id', vitalId)
+                .eq('patient_id', id); // Vitals table does not have clinic_id, isolated via patient_id which belongs to clinic
+            if (error) throw error;
+            
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'delete_vital', vital_id: vitalId }
+            ));
+
+            return { success: true, message: 'Vitals record deleted' };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`DELETE /api/patients/${id}/vitals/${vitalId}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post(':id/allergies')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async addAllergy(@Param('id') id: string, @Body() body: any) {
+        if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            if (!body?.allergy_name) {
+                throw new HttpException({ success: false, error: 'allergy_name is required' }, HttpStatus.BAD_REQUEST);
+            }
+            
+            const payload = {
+                patient_id: id,
+                clinic_id,
+                appointment_id: body.appointment_id || null,
+                allergy_name: body.allergy_name,
+                severity: body.severity || 'MEDIUM',
+                reaction: body.reaction || null
+            };
+
+            const { data, error } = await supabase.from('sakhi_clinic_allergies').insert(payload).select().single();
+            if (error) throw error;
+            
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'add_allergy', allergy_name: body.allergy_name }
+            ));
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/patients/${id}/allergies`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Patch(':id/allergies/:allergyId')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async updateAllergy(@Param('id') id: string, @Param('allergyId') allergyId: string, @Body() body: any) {
+        if (!this.utils.isUuid(id) || !this.utils.isUuid(allergyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const updates: any = {};
+            if (body.severity) updates.severity = body.severity;
+            if (body.reaction !== undefined) updates.reaction = body.reaction;
+
+            if (Object.keys(updates).length === 0) {
+                return { success: true, message: 'No updates provided' };
+            }
+
+            const { data, error } = await supabase.from('sakhi_clinic_allergies')
+                .update(updates)
+                .eq('id', allergyId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .select().single();
+            if (error) throw error;
+            
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'update_allergy', allergy_id: allergyId, severity: body.severity }
+            ));
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`PATCH /api/patients/${id}/allergies/${allergyId}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete(':id/allergies/:allergyId')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async deleteAllergy(@Param('id') id: string, @Param('allergyId') allergyId: string) {
+        if (!this.utils.isUuid(id) || !this.utils.isUuid(allergyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const { error } = await supabase.from('sakhi_clinic_allergies')
+                .delete()
+                .eq('id', allergyId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id);
+            if (error) throw error;
+            
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'delete_allergy', allergy_id: allergyId }
+            ));
+
+            return { success: true, message: 'Allergy deleted' };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`DELETE /api/patients/${id}/allergies/${allergyId}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post(':id/medical-history')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async addMedicalHistory(@Param('id') id: string, @Body() body: any) {
+        if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            if (!body?.condition_name) {
+                throw new HttpException({ success: false, error: 'condition_name is required' }, HttpStatus.BAD_REQUEST);
+            }
+
+            // Check for duplicate active conditions
+            const { data: existingConditions } = await supabase.from('sakhi_clinic_medical_history')
+                .select('id')
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .eq('condition_name', body.condition_name)
+                .eq('status', 'ACTIVE');
+                
+            if (existingConditions && existingConditions.length > 0) {
+                return { success: true, message: 'Patient already has an active condition with this name', data: existingConditions[0] };
+            }
+
+            const payload = {
+                patient_id: id,
+                clinic_id,
+                appointment_id: body.appointment_id || null,
+                condition_name: body.condition_name,
+                status: body.status || 'ACTIVE',
+                diagnosis_date: body.diagnosis_date || null
+            };
+
+            const { data, error } = await supabase.from('sakhi_clinic_medical_history').insert(payload).select().single();
+            if (error) throw error;
+
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'add_medical_history', condition_name: body.condition_name }
+            ));
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/patients/${id}/medical-history`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete(':id/medical-history/:historyId')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async deleteMedicalHistory(@Param('id') id: string, @Param('historyId') historyId: string) {
+        if (!this.utils.isUuid(id) || !this.utils.isUuid(historyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const { error } = await supabase.from('sakhi_clinic_medical_history')
+                .delete()
+                .eq('id', historyId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id);
+            if (error) throw error;
+            
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'delete_medical_history', history_id: historyId }
+            ));
+
+            return { success: true, message: 'Medical history deleted' };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`DELETE /api/patients/${id}/medical-history/${historyId}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Patch(':id/medical-history/:historyId/resolve')
+    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    async resolveMedicalHistory(@Param('id') id: string, @Param('historyId') historyId: string) {
+        if (!this.utils.isUuid(id) || !this.utils.isUuid(historyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const { data, error } = await supabase.from('sakhi_clinic_medical_history')
+                .update({ status: 'RESOLVED' })
+                .eq('id', historyId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .select().single();
+            if (error) throw error;
+            
+            // Audit Log
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
+                clinic_id,
+                TenantContext.getUserId(),
+                id,
+                { action: 'resolve_medical_history', history_id: historyId }
+            ));
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`PATCH /api/patients/${id}/medical-history/${historyId}/resolve`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get(':id/timeline')
+    async getTimeline(
+        @Param('id') id: string,
+        @Query('page') page = '1',
+        @Query('limit') limit = '20',
+        @Query('types') types?: string
+    ) {
+        if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const pageNum = parseInt(page, 10) || 1;
+            const limitNum = parseInt(limit, 10) || 20;
+            const from = (pageNum - 1) * limitNum;
+            const to = from + limitNum - 1;
+
+            let query = supabase.from('sakhi_clinic_patient_timeline_view').select('*', { count: 'exact' })
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id);
+
+            if (types) {
+                const typeArray = types.split(',').map(t => t.trim().toUpperCase());
+                if (typeArray.length > 0) {
+                    query = query.in('event_type', typeArray);
+                }
+            }
+
+            const { data, count, error } = await query
+                .order('event_date', { ascending: false })
+                .range(from, to);
+
+            if (error) throw error;
+            return { success: true, data: data ?? [], pagination: { page: pageNum, limit: limitNum, total: count ?? 0 } };
+        } catch (error: any) {
+            this.logger.error(`GET /api/patients/${id}/timeline`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

@@ -6,7 +6,7 @@ import { AddVitalRequest, VitalRecord, VitalType } from './vitals.schema';
 @Injectable()
 export class VitalsRepository {
   private readonly logger = new Logger(VitalsRepository.name);
-  private readonly TABLE_NAME = 'patient_vitals';
+  private readonly TABLE_NAME = 'sakhi_clinic_patient_vitals';
 
   constructor(
     @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,

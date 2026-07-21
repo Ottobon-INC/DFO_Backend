@@ -66,20 +66,29 @@ export class S3Service {
 
     /**
      * Generates a presigned URL that allows a client to download a file from S3.
-     * The URL will be valid for 1 hour.
+     * The URL will be valid for the specified duration (default 1 hour).
      * 
      * @param path The full S3 object key (path).
+     * @param expiresIn Expiration time in seconds (default 3600).
+     * @param downloadFilename Optional original filename to force as download attachment.
      * @returns A promise that resolves to the presigned download URL.
      */
-    async generatePresignedDownloadUrl(path: string): Promise<string> {
-        const command = new GetObjectCommand({
+    async generatePresignedDownloadUrl(path: string, expiresIn: number = 3600, downloadFilename?: string): Promise<string> {
+        const commandParams: any = {
             Bucket: this.bucketName,
             Key: path,
-        });
+        };
+
+        if (downloadFilename) {
+            // Sanitize filename to prevent HTTP header injection
+            const safeName = downloadFilename.replace(/[^a-zA-Z0-9.\-_ ]/g, '_');
+            commandParams.ResponseContentDisposition = `attachment; filename="${safeName}"`;
+        }
+
+        const command = new GetObjectCommand(commandParams);
 
         try {
-            // URL expires in 3600 seconds (1 hour)
-            return await getSignedUrl(this.s3Client, command, { expiresIn: 3600 });
+            return await getSignedUrl(this.s3Client, command, { expiresIn });
         } catch (error) {
             this.logger.error(`Failed to generate presigned download URL for path ${path}:`, error);
             throw new Error('Could not generate secure download link.');
