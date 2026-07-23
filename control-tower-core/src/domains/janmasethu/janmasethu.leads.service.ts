@@ -3,6 +3,7 @@ import { JanmasethuRepository } from './janmasethu.repository';
 import { JanmasethuEncryptionService } from './utils/encryption.service';
 import { JourneyStage } from './dfo.types';
 import { JanmasethuDispatchService } from './channel/janmasethu-dispatch.service';
+import { JanmasethuAssignmentEngine } from './janmasethu-assignment.engine';
 
 /**
  * Valid lead_status enum values from database
@@ -77,7 +78,8 @@ export class JanmasethuLeadsService {
     constructor(
         private readonly repository: JanmasethuRepository,
         private readonly encryption: JanmasethuEncryptionService,
-        private readonly dispatcher: JanmasethuDispatchService
+        private readonly dispatcher: JanmasethuDispatchService,
+        private readonly assignmentEngine: JanmasethuAssignmentEngine
     ) { }
 
     /**
@@ -112,18 +114,34 @@ export class JanmasethuLeadsService {
             }
         }
 
-        // 3. Prepare clinical payload with encryption
+        // 3. Resolve and Assign Clinic/Hospital based on ZIP Code
+        let resolvedClinicId = body.clinic_id;
+        if (!resolvedClinicId) {
+            const zip = body.zip_code || body.location || body.pin;
+            if (zip) {
+                resolvedClinicId = await this.assignmentEngine.resolveClinicForZip(zip, body.inquiry);
+            }
+        }
+
+        // Fallback to HQ / Test Clinic ID if no match is found
+        if (!resolvedClinicId) {
+            const hqClinic = await this.repository.findHqClinic();
+            resolvedClinicId = hqClinic?.id || null;
+        }
+
+        // 4. Prepare clinical payload with encryption
         const payload = {
             ...body,
+            clinic_id: resolvedClinicId,
             status: this.normalizeStatus(body.status),
             problem: this.encryption.encrypt(body.problem),
             treatment_doctor: this.encryption.encrypt(body.treatment_doctor),
             treatment_suggested: this.encryption.encrypt(body.treatment_suggested),
         };
 
-        this.logger.log(`JanmaSethu: Registering new clinical lead for ${name} [${phone}]`);
+        this.logger.log(`JanmaSethu: Registering new clinical lead for ${name} [${phone}] under clinic ${resolvedClinicId}`);
 
-        // 4. Persist in Repository
+        // 5. Persist in Repository
         return await this.repository.createLead(payload);
     }
 

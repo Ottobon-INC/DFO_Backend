@@ -53,6 +53,8 @@ export enum JanmasethuPermission {
 export interface JanmasethuUserContext {
     id: string;
     role: JanmasethuUserRole;
+    clinicId?: string;
+    clinic_id?: string;
 }
 
 export enum JanmasethuRole {

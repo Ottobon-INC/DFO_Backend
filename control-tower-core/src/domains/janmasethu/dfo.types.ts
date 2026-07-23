@@ -54,6 +54,7 @@ export interface DFOAppointment {
     status: AppointmentStatus;
     notes?: string;
     reminders_sent: number;
+    clinic_id?: string;
 }
 
 export enum ConsultationStatus {

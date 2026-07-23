@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, Res, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, Res, Logger, HttpException, HttpStatus, Request } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
@@ -27,6 +27,7 @@ export class LeadsController {
     async list(
         @Query('page') page = '1', @Query('limit') limit = '20',
         @Query('phone') phone?: string, @Query('status') status?: string, @Query('q') q?: string,
+        @Request() req?: any,
     ) {
         const supabase = this.supabaseService.getClient();
         const pageNum = Number(page);
@@ -35,9 +36,16 @@ export class LeadsController {
         const to = from + limitNum - 1;
         try {
             let query = supabase.from('sakhi_clinic_leads').select('*', { count: 'exact' }).order('date_added', { ascending: false }).range(from, to);
+            
+            const user = req?.user;
+            if (user && user.clinic_id) {
+                query = query.eq('clinic_id', user.clinic_id);
+            }
+
             if (phone) query = query.eq('phone', phone);
             else if (status) query = query.eq('status', status);
             else if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%`);
+            
             const { data, error, count } = await query;
             if (error) throw error;
             const decryptedData = data?.map(lead => ({ ...lead, problem: this.encryption.decrypt(lead.problem), treatment_suggested: this.encryption.decrypt(lead.treatment_suggested), treatment_doctor: this.encryption.decrypt(lead.treatment_doctor) }));
@@ -50,7 +58,7 @@ export class LeadsController {
 
     @Post()
     @UseGuards(ClinicsAuthGuard)
-    async create(@Body() rawBody: any) {
+    async create(@Body() rawBody: any, @Request() req?: any) {
         const supabase = this.supabaseService.getClient();
         const tv = this.utils.toValue.bind(this.utils);
         try {
@@ -64,6 +72,9 @@ export class LeadsController {
             if (!isValidPhone) {
                 throw new HttpException({ success: false, error: 'Invalid phone number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
             }
+
+            const user = req?.user;
+            const resolvedClinicId = user?.clinic_id || body.clinic_id || null;
             
             const clinic_id = TenantContext.getClinicId() || '';
             const payload = this.utils.sanitizePayload({
@@ -75,6 +86,7 @@ export class LeadsController {
                 assigned_to_user_id: tv(body.assigned_to_user_id), guardian_name: tv(body.guardian_name),
                 guardian_age: tv(body.guardian_age), location: tv(body.location),
                 alternate_phone: tv(body.alternate_phone), referral_required: tv(body.referral_required),
+                clinic_id: resolvedClinicId,
             });
             const { data, error } = await supabase.from('sakhi_clinic_leads').insert(payload).select().single();
             if (error) throw error;
@@ -95,10 +107,16 @@ export class LeadsController {
 
     @Get('export')
     @UseGuards(ClinicsAuthGuard)
-    async exportCsv(@Query('phone') phone?: string, @Query('status') status?: string, @Query('q') q?: string, @Res() res?: Response) {
+    async exportCsv(@Query('phone') phone?: string, @Query('status') status?: string, @Query('q') q?: string, @Res() res?: Response, @Request() req?: any) {
         const supabase = this.supabaseService.getClient();
         try {
             let query = supabase.from('sakhi_clinic_leads').select('*').order('date_added', { ascending: false });
+            
+            const user = req?.user;
+            if (user && user.clinic_id) {
+                query = query.eq('clinic_id', user.clinic_id);
+            }
+
             if (phone) query = query.eq('phone', phone);
             else if (status) query = query.eq('status', status);
             else if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%`);

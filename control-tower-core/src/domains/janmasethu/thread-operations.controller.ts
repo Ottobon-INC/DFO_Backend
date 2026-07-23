@@ -138,4 +138,19 @@ export class ThreadOperationsController {
         await this.repo.refreshSummary(id, body.clinicalSummary, body.handoffSummary);
         return { success: true };
     }
+
+    /**
+     * Gap 6 + Gap 7: Operator & Doctor Workspace Context Panel
+     * Returns the full booking context, patient summary, lead status,
+     * and operator notes for a given thread.
+     */
+    @Get(':id/booking-context')
+    async getBookingContext(@Param('id') id: string) {
+        const context = await this.repo.getBookingContext(id);
+        if (!context) {
+            throw new BadRequestException('Booking context not found for this thread');
+        }
+        return { success: true, data: context };
+    }
 }
+

@@ -214,6 +214,62 @@ export class DocumentsController {
         }
     }
 
+    @Get(':id/resolve')
+    async resolveDocumentUrl(@Param('id') documentId: string) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) {
+            throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+        }
+
+        if (!this.isValidUUID(documentId)) {
+            throw new HttpException({ success: false, error: 'Invalid document ID format' }, HttpStatus.BAD_REQUEST);
+        }
+
+        try {
+            const supabase = this.supabaseService.getClient();
+
+            // 1. Fetch document and verify ownership
+            const { data: document, error: docError } = await supabase
+                .from('sakhi_clinic_documents')
+                .select('clinic_id, file_path, status, name')
+                .eq('id', documentId)
+                .single();
+
+            if (docError || !document) {
+                this.logger.warn(`Document resolve failed for ${documentId}: Not found or error.`);
+                throw new HttpException({ success: false, error: 'Document unavailable or access denied' }, HttpStatus.NOT_FOUND);
+            }
+
+            if (document.clinic_id !== clinic_id) {
+                this.logger.warn(`SECURITY: Cross-tenant document resolve attempt. User clinic: ${clinic_id}, Doc clinic: ${document.clinic_id}`);
+                throw new HttpException({ success: false, error: 'Document unavailable or access denied' }, HttpStatus.FORBIDDEN);
+            }
+
+            if (!document.file_path) {
+                throw new HttpException({ success: false, error: 'Document unavailable or access denied' }, HttpStatus.NOT_FOUND);
+            }
+
+            // 2. Generate short-lived presigned URL (15 minutes = 900 seconds) forcing it to download with its original name
+            const secureUrl = await this.s3Service.generatePresignedDownloadUrl(document.file_path, 900, document.name);
+
+            return {
+                success: true,
+                data: {
+                    url: secureUrl,
+                    expiresIn: 900
+                }
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`GET /api/v1/clinics/documents/${documentId}/resolve failed:`, error);
+            // DO NOT leak the internal error or S3 path
+            throw new HttpException(
+                { success: false, error: 'Document unavailable or access denied' },
+                HttpStatus.INTERNAL_SERVER_ERROR
+            );
+        }
+    }
+
     private isValidUUID(uuid: string): boolean {
         const regex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
         return regex.test(uuid);
