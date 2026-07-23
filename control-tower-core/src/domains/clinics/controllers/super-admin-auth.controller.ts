@@ -48,9 +48,7 @@ export class SuperAdminAuthController {
                 }
             } catch {}
 
-            if (!isMatch && user.password_hash === password) {
-                isMatch = true; // Dev fallback
-            }
+
 
             if (!isMatch) {
                 throw new HttpException({ success: false, error: 'Invalid super admin credentials' }, HttpStatus.UNAUTHORIZED);

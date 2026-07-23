@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Delete, Param, Body, Logger, HttpException, HttpStatus, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Put, Delete, Param, Body, Logger, HttpException, HttpStatus, Headers } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
@@ -51,7 +51,7 @@ export class UsersController {
         try {
             const { data, error } = await supabase
                 .from('sakhi_clinic_users')
-                .select('id, email, role, is_clinic_admin, created_at')
+                .select('id, email, role, is_clinic_admin, created_at, first_name, last_name, middle_name, hospital_id, phone_number, department, designation, profile_image_url')
                 .eq('clinic_id', decoded.clinic_id);
 
             if (error) throw error;
@@ -61,7 +61,15 @@ export class UsersController {
                 role: u.role,
                 is_clinic_admin: u.is_clinic_admin,
                 created_at: u.created_at,
-                name: u.email ? u.email.split('@')[0].split('.')[0].charAt(0).toUpperCase() + u.email.split('@')[0].split('.')[0].slice(1) : 'User'
+                name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email.split('@')[0],
+                first_name: u.first_name,
+                last_name: u.last_name,
+                middle_name: u.middle_name,
+                hospital_id: u.hospital_id,
+                phone_number: u.phone_number,
+                department: u.department,
+                designation: u.designation,
+                profile_image_url: u.profile_image_url
             }));
             return { success: true, data: mapped };
         } catch (error: any) {
@@ -83,10 +91,10 @@ export class UsersController {
             throw new HttpException({ success: false, error: 'Admin is not bound to a clinic' }, HttpStatus.BAD_REQUEST);
         }
 
-        const { name, email, password, role } = body;
+        const { first_name, last_name, middle_name, hospital_id, phone_number, department, designation, email, password, role } = body;
 
-        if (!name || !email || !password || !role) {
-            throw new HttpException({ success: false, error: 'Name, email, password, and role are required' }, HttpStatus.BAD_REQUEST);
+        if (!first_name || !email || !password || !role) {
+            throw new HttpException({ success: false, error: 'First name, email, password, and role are required' }, HttpStatus.BAD_REQUEST);
         }
 
         const allowedRoles = ['Doctor', 'CRO', 'Receptionist', 'Nurse'];
@@ -99,14 +107,22 @@ export class UsersController {
             // Hash password
             let password_hash = password;
             try {
-                const passwordHash = require('password-hash');
-                password_hash = passwordHash.generate(password);
-            } catch {
-                // dev fallback
+                const bcrypt = require('bcrypt');
+                password_hash = await bcrypt.hash(password, 10);
+            } catch (err) {
+                this.logger.error('Failed to hash password during user creation:', err);
+                throw new HttpException({ success: false, error: 'Internal server error' }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
 
             // Force the new user to be in the same clinic as the admin who is creating them
             const payload = {
+                first_name,
+                last_name,
+                middle_name,
+                hospital_id,
+                phone_number,
+                department,
+                designation,
                 email,
                 password_hash,
                 role,
@@ -133,6 +149,51 @@ export class UsersController {
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error('POST /api/clinic/users', error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+    @Put('profile')
+    async updateMyProfile(
+        @Headers('authorization') authHeader: string,
+        @Body() body: any
+    ) {
+        const decoded = this.verifyToken(authHeader);
+        if (!decoded.sub) {
+            throw new HttpException({ success: false, error: 'Invalid token payload' }, HttpStatus.UNAUTHORIZED);
+        }
+
+        const { first_name, last_name, middle_name, phone_number, email, profile_image_url } = body;
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            const payload: any = {
+                first_name,
+                last_name,
+                middle_name,
+                phone_number,
+                email,
+                profile_image_url,
+            };
+            // Clean undefined values
+            Object.keys(payload).forEach(key => payload[key] === undefined && delete payload[key]);
+
+            const { data, error } = await supabase
+                .from('sakhi_clinic_users')
+                .update(payload)
+                .eq('id', decoded.sub)
+                .select()
+                .single();
+
+            if (error) {
+                if (error.code === '23505') {
+                    throw new HttpException({ success: false, error: 'Email already exists' }, HttpStatus.CONFLICT);
+                }
+                throw error;
+            }
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error('PUT /api/clinic/users/profile', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

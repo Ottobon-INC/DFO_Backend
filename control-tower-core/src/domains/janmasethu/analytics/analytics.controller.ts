@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Headers, UnauthorizedException, Logger, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Headers, UnauthorizedException, Logger, ForbiddenException, UseGuards, Request } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { JanmasethuRbacService } from '../janmasethu.rbac';
 import { JanmasethuAuditService } from '../janmasethu.audit.service';
 import { JanmasethuUserRole, JanmasethuUserContext } from '../janmasethu.types';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 /**
  * AnalyticsController
@@ -11,6 +12,7 @@ import { JanmasethuUserRole, JanmasethuUserContext } from '../janmasethu.types';
  * Logic: Read from precomputed JSON Cache (optimized for performance).
  */
 @Controller('janmasethu/analytics')
+@UseGuards(JwtAuthGuard)
 export class AnalyticsController {
     private readonly logger = new Logger(AnalyticsController.name);
 
@@ -20,11 +22,10 @@ export class AnalyticsController {
         private readonly audit: JanmasethuAuditService,
     ) { }
 
-    private getUserContext(headers: Record<string, any>): JanmasethuUserContext {
-        const userId = headers['x-user-id'];
-        const userRole = headers['x-user-role'] as JanmasethuUserRole;
-        if (!userId || !userRole) throw new UnauthorizedException('Missing clinician headers');
-        return { id: userId, role: userRole };
+    private getUserContext(req: any): JanmasethuUserContext {
+        const user = req.user;
+        if (!user) throw new UnauthorizedException('Missing clinician headers');
+        return { id: user.id, role: user.role };
     }
 
     /**
@@ -34,8 +35,8 @@ export class AnalyticsController {
      * Accessible by DOCTOR and ADMIN.
      */
     @Get('dashboard')
-    async getDashboardStats(@Headers() headers: any) {
-        const ctx = this.getUserContext(headers);
+    async getDashboardStats(@Request() req: any) {
+        const ctx = this.getUserContext(req);
 
         // RBAC: Only Doctors and Admins allowed on dashboard analytics
         if (ctx.role === JanmasethuUserRole.NURSE) {
@@ -57,8 +58,8 @@ export class AnalyticsController {
      * Admin only.
      */
     @Post('refresh')
-    async forceRefresh(@Headers() headers: any) {
-        const ctx = this.getUserContext(headers);
+    async forceRefresh(@Request() req: any) {
+        const ctx = this.getUserContext(req);
 
         if (ctx.role !== JanmasethuUserRole.DOCTOR) {
             throw new ForbiddenException('Manual refresh restricted to lead physicians.');

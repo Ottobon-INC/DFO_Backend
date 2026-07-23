@@ -8,6 +8,7 @@ import { ClinicsUtilsService } from './services/clinics-utils.service';
 import { DocumentsService } from './services/documents.service';
 import { StaffCacheService } from './services/staff-cache.service';
 import { RoomAllocationService } from './services/room-allocation.service';
+import { SchedulesService } from './services/schedules.service';
 
 // Guards
 import { ClinicsAuthGuard } from './guards/clinics-auth.guard';
@@ -34,6 +35,7 @@ import { StaffController } from './controllers/staff.controller';
 import { DocumentsController } from './controllers/documents.controller';
 import { AuditController } from './controllers/audit.controller';
 import { RoomAllocationController } from './controllers/room-allocation.controller';
+import { SchedulesController } from './controllers/schedules.controller';
 
 // Feature Modules
 import { AwsModule } from '../../infrastructure/aws/aws.module';
@@ -55,6 +57,7 @@ import { BullModule } from '@nestjs/bullmq';
         AuditEventProcessor,
         CacheEventProcessor,
         RoomAllocationService,
+        SchedulesService,
     ],
     controllers: [
         AppointmentsController,
@@ -74,6 +77,7 @@ import { BullModule } from '@nestjs/bullmq';
         DocumentsController,
         AuditController,
         RoomAllocationController,
+        SchedulesController,
     ],
     exports: [
         ClinicsSupabaseService,
@@ -82,6 +86,7 @@ import { BullModule } from '@nestjs/bullmq';
         DocumentsService,
         StaffCacheService,
         RoomAllocationService,
+        SchedulesService,
     ],
 })
 export class ClinicsModule {}

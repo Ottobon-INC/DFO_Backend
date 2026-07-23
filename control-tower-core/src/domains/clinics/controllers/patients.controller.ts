@@ -25,7 +25,12 @@ export class PatientsController {
     @Get()
     async list(@Query('phone') phone?: string, @Query('q') q?: string, @Query('page') page = '1', @Query('limit') limit = '20') {
         const clinic_id = TenantContext.getClinicId();
-        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+        const role = TenantContext.getRole()?.toLowerCase();
+        const isCroOrAdmin = role === 'cro' || role === 'admin';
+
+        if (!clinic_id && !isCroOrAdmin) {
+            throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+        }
 
         const supabase = this.supabaseService.getClient();
         const pageNum = Number(page);
@@ -33,7 +38,10 @@ export class PatientsController {
         const from = (pageNum - 1) * limitNum;
         const to = from + limitNum - 1;
         try {
-            let query = supabase.from('sakhi_clinic_patients').select('*', { count: 'exact' }).eq('clinic_id', clinic_id);
+            let query = supabase.from('sakhi_clinic_patients').select('*', { count: 'exact' });
+            if (clinic_id) {
+                query = query.eq('clinic_id', clinic_id);
+            }
             if (phone) query = query.eq('mobile', phone);
             else if (q) query = query.or(`name.ilike.%${q}%,mobile.ilike.%${q}%`);
             else query = query.order('created_at', { ascending: false });

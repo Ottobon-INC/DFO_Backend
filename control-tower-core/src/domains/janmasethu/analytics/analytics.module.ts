@@ -8,9 +8,12 @@ import { JanmasethuScopePolicy } from '../JanmasethuScopePolicy';
 import { JanmasethuAuditService } from '../janmasethu.audit.service';
 import { JanmasethuRepository } from '../janmasethu.repository';
 
+import { AuthModule } from '../auth/auth.module';
+
 @Module({
     imports: [
         BullModule.registerQueue({ name: 'janmasethu_analytics_queue' }),
+        AuthModule,
     ],
     providers: [
         AnalyticsService,

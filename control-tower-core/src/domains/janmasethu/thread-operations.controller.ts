@@ -7,7 +7,7 @@ import { JanmasethuDispatchService } from './channel/janmasethu-dispatch.service
 import { JanmasethuAssignmentService } from './janmasethu.assignment';
 import { JanmasethuRole } from './janmasethu.types';
 
-@Controller('threads')
+@Controller('janmasethu/threads')
 @UseGuards(JwtAuthGuard)
 export class ThreadOperationsController {
     constructor(

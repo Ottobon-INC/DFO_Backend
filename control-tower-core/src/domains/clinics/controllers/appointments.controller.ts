@@ -66,12 +66,18 @@ export class AppointmentsController {
         try {
             const { data, error } = await supabase
                 .from('sakhi_clinic_users')
-                .select('id, name, specialization, role')
+                .select('id, first_name, last_name, specialization, role')
                 .eq('clinic_id', clinic_id)
                 .in('role', ['Doctor', 'Superadmin', 'Admin'])
-                .order('name');
+                .order('first_name');
             if (error) throw error;
-            return { success: true, data: data || [] };
+            
+            const mappedData = (data || []).map(d => ({
+                ...d,
+                name: `${d.first_name || ''} ${d.last_name || ''}`.trim()
+            }));
+            
+            return { success: true, data: mappedData };
         } catch (error: any) {
             this.logger.error('GET /api/v1/clinics/appointments/doctors', error);
             throw new HttpException({ success: false, error: 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);

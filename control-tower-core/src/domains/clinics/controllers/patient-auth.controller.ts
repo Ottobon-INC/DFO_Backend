@@ -34,7 +34,7 @@ export class PatientAuthController {
             // 1. Fetch patient record by mobile number
             const { data: patient, error } = await supabase
                 .from('sakhi_clinic_patients')
-                .select('id, name, mobile, uhid, pin_hash, failed_attempts, locked_until')
+                .select('id, name, mobile, uhid, pin_hash, failed_attempts, locked_until, clinic_id')
                 .eq('mobile', mobile)
                 .single();
 
@@ -65,9 +65,7 @@ export class PatientAuthController {
             // 3. Crypto Verification
             let isPinValid = await bcrypt.compare(pin, patient.pin_hash);
 
-            if (!isPinValid && patient.pin_hash === pin) {
-                isPinValid = true; // Dev fallback
-            }
+
 
             // 4. Handle Failure & Counter
             if (!isPinValid) {
@@ -102,6 +100,7 @@ export class PatientAuthController {
                     mobile: patient.mobile, 
                     role: 'patient', 
                     name: patient.name,
+                    clinic_id: patient.clinic_id,
                 },
                 this.jwtSecret,
                 { expiresIn: this.jwtExpiresIn },
@@ -114,7 +113,8 @@ export class PatientAuthController {
                     id: patient.id,
                     uhid: patient.uhid,
                     name: patient.name,
-                    mobile: patient.mobile
+                    mobile: patient.mobile,
+                    clinic_id: patient.clinic_id
                 }
             };
 

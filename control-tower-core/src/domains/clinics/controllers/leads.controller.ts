@@ -65,7 +65,9 @@ export class LeadsController {
                 throw new HttpException({ success: false, error: 'Invalid phone number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
             }
             
+            const clinic_id = TenantContext.getClinicId() || '';
             const payload = this.utils.sanitizePayload({
+                clinic_id,
                 name, phone, date_added: tv(body.date_added), status: normalizeStatus(tv(body.status)),
                 age: tv(body.age), gender: tv(body.gender), source: tv(body.source), inquiry: tv(body.inquiry),
                 problem: this.encryption.encrypt(tv(body.problem)), treatment_doctor: this.encryption.encrypt(tv(body.treatment_doctor)),
@@ -78,10 +80,10 @@ export class LeadsController {
             if (error) throw error;
             
             const actor_id = TenantContext.getUserId();
-            const clinic_id = TenantContext.getClinicId() || '';
             await this.eventsQueue.add(DFO_EVENTS.LEAD_CREATED, new LeadEvent(
                 clinic_id, actor_id, data.id, { action: 'create_lead' }
             ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
 
             return { success: true, data };
         } catch (error: any) {
@@ -122,7 +124,9 @@ export class LeadsController {
         const supabase = this.supabaseService.getClient();
         const tv = this.utils.toValue.bind(this.utils);
         try {
+            const clinic_id = TenantContext.getClinicId() || '';
             const leads = body.leads;
+
             if (!Array.isArray(leads)) throw new HttpException({ success: false, error: 'leads must be an array' }, HttpStatus.BAD_REQUEST);
             const errors: any[] = [];
             const validLeadsToInsert: any[] = [];
@@ -140,6 +144,7 @@ export class LeadsController {
                 if (existingPhones.has(phone)) { errors.push({ phone, name, reason: 'Duplicate - already exists in database' }); continue; }
                 if (validLeadsToInsert.find(l => l.phone === phone)) { errors.push({ phone, name, reason: 'Duplicate in batch' }); continue; }
                 validLeadsToInsert.push(this.utils.sanitizePayload({
+                    clinic_id,
                     name, phone, status: normalizeStatus(tv(lead.status)), date_added: tv(lead.date_added),
                     age: tv(lead.age), gender: tv(lead.gender),
                     source: tv(lead.source) || (looksLikeSource(tv(lead.status)) ? tv(lead.status) : undefined),
@@ -158,12 +163,12 @@ export class LeadsController {
                     successCount = validLeadsToInsert.length;
                     
                     const actor_id = TenantContext.getUserId();
-                    const clinic_id = TenantContext.getClinicId() || '';
                     await this.eventsQueue.add(DFO_EVENTS.LEAD_BULK_IMPORTED, new LeadEvent(
                         clinic_id, actor_id, 'bulk_import', { action: 'bulk_import_leads', count: successCount }
                     ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
                 }
             }
+
             return { success: true, count: successCount, failed: errors.length, errors };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;

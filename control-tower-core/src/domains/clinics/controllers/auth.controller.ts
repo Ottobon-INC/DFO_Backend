@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Logger, HttpException, HttpStatus, Headers, Patch } from '@nestjs/common';
+import { Controller, Post, Get, Body, Logger, HttpException, HttpStatus, Headers, Patch } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -45,25 +45,28 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'User has no password set. Please contact admin.' }, HttpStatus.UNAUTHORIZED);
             }
 
-            // Use password-hash verify
+            // Support both bcrypt and legacy password-hash algorithms
             let isMatch = false;
             try {
-                const passwordHash = require('password-hash');
-                if (passwordHash.verify(password, user.password_hash)) {
-                    isMatch = true;
+                if (user.password_hash.startsWith('$2b$') || user.password_hash.startsWith('$2a$')) {
+                    const bcrypt = require('bcrypt');
+                    isMatch = await bcrypt.compare(password, user.password_hash);
+                } else {
+                    const passwordHash = require('password-hash');
+                    isMatch = passwordHash.verify(password, user.password_hash);
                 }
             } catch (err) {
                 this.logger.error('Error verifying password hash:', err);
             }
 
-            if (!isMatch && user.password_hash === password) {
-                isMatch = true; // Dev fallback
-            }
-
             if (!isMatch) {
-                await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN_FAILED, new AuthEvent(
-                    null, null, { action: 'login_failed', username: email, reason: 'Invalid credentials' }
-                ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+                try {
+                    await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN_FAILED, new AuthEvent(
+                        null, null, { action: 'login_failed', username: email, reason: 'Invalid credentials' }
+                    ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+                } catch (queueErr) {
+                    this.logger.error('Failed to queue login failed event', queueErr);
+                }
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
@@ -75,7 +78,9 @@ export class AuthController {
                     user_id: user.id,
                     email: user.email,
                     role: user.role,
-                    name: user.name,
+                    name: [user.first_name, user.last_name].filter(Boolean).join(' ') || (user.email ? user.email.split('@')[0] : 'User'),
+                    first_name: user.first_name,
+                    last_name: user.last_name,
                     clinic_id: user.clinic_id,
                     is_super_admin: user.is_super_admin,
                     is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin'
@@ -86,7 +91,15 @@ export class AuthController {
 
             const userResponse = {
                 id: user.id,
-                name: user.name,
+                name: [user.first_name, user.last_name].filter(Boolean).join(' ') || (user.email ? user.email.split('@')[0] : 'User'),
+                first_name: user.first_name,
+                last_name: user.last_name,
+                middle_name: user.middle_name,
+                hospital_id: user.hospital_id,
+                phone_number: user.phone_number,
+                department: user.department,
+                designation: user.designation,
+                profile_image_url: user.profile_image_url,
                 email: user.email,
                 role: user.role,
                 clinic_id: user.clinic_id,
@@ -95,9 +108,13 @@ export class AuthController {
                 token
             };
 
-            await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN, new AuthEvent(
-                user.clinic_id, user.id, { action: 'login_success' }
-            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+            try {
+                await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN, new AuthEvent(
+                    user.clinic_id, user.id, { action: 'login_success' }
+                ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+            } catch (queueErr) {
+                this.logger.error('Failed to queue login success event', queueErr);
+            }
 
             return {
                 success: true,
@@ -120,6 +137,55 @@ export class AuthController {
         // Since we are using stateless JWT, we don't need to invalidate anything on the server.
         // We just return success so the frontend can clear its local storage.
         return { success: true, message: 'Logged out successfully' };
+    }
+
+    @Get('me')
+    async getMe(@Headers('authorization') authHeader: string) {
+        const decoded = this.verifyToken(authHeader);
+        
+        try {
+            const supabase = this.supabaseService.getClient();
+            const { data: user, error } = await supabase
+                .from('sakhi_clinic_users')
+                .select('*')
+                .eq('id', decoded.sub)
+                .single();
+
+            if (error || !user) throw new Error('User not found in DB');
+
+            return {
+                success: true,
+                user: {
+                    id: user.id,
+                    name: [user.first_name, user.last_name].filter(Boolean).join(' ') || (user.email ? user.email.split('@')[0] : 'User'),
+                    first_name: user.first_name,
+                    last_name: user.last_name,
+                    middle_name: user.middle_name,
+                    hospital_id: user.hospital_id,
+                    phone_number: user.phone_number,
+                    department: user.department,
+                    designation: user.designation,
+                    profile_image_url: user.profile_image_url,
+                    email: user.email,
+                    role: user.role,
+                    clinic_id: user.clinic_id,
+                    is_super_admin: user.is_super_admin,
+                    is_clinic_admin: user.is_clinic_admin
+                }
+            };
+        } catch (err) {
+            // Fallback to token if DB fetch fails
+            return {
+                success: true,
+                user: {
+                    id: decoded.sub,
+                    email: decoded.email,
+                    role: decoded.role,
+                    name: decoded.name,
+                    clinic_id: decoded.clinic_id,
+                }
+            };
+        }
     }
 
     private verifyToken(authHeader?: string) {

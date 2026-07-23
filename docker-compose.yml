@@ -21,11 +21,10 @@ services:
       - control-tower-net
 
   frontend:
-    build: ./janmasethu-dashboard
+    build: ../DFO_Frontend
     ports:
-      - "3002:3000" # Host:Container (Using port 3002 for frontend)
+      - "3002:80" # Host:Container (Using port 3002 for frontend mapped to 80 in container)
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:3001
       - NODE_ENV=production
     depends_on:
       - backend

@@ -16,14 +16,14 @@ export class ControlTowerController {
         try {
             const { data: appointments, error } = await supabase
                 .from('sakhi_clinic_appointments')
-                .select('id, status, updated_at, arrived_at, checked_in_at, created_at, patient_name_snapshot, doctor_name_snapshot, sakhi_clinic_patients (name)')
+                .select('id, status, arrived_at, checked_in_at, created_at, patient_name_snapshot, doctor_name_snapshot, sakhi_clinic_patients (name)')
                 .eq('appointment_date', today)
                 .in('status', ['Arrived', 'Checked-In']);
             if (error) throw error;
             const now = new Date();
             const liveQueue: any[] = [];
             (appointments || []).forEach((appt: any) => {
-                const statusTime = new Date(appt.checked_in_at || appt.arrived_at || appt.updated_at);
+                const statusTime = new Date(appt.checked_in_at || appt.arrived_at || appt.created_at || new Date());
                 const waitingMinutes = Math.floor((now.getTime() - statusTime.getTime()) / 60000);
                 liveQueue.push({ patientName: appt.patient_name_snapshot || appt.sakhi_clinic_patients?.name || 'Unknown', doctorName: appt.doctor_name_snapshot || 'Unassigned', status: appt.status, waitingMinutes });
             });
