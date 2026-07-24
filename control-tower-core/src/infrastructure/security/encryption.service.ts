@@ -12,7 +12,10 @@ export class EncryptionService {
     constructor(private readonly configService: ConfigService) { }
 
     private getKey(): Buffer {
-        const secret = this.configService.get<string>('ENCRYPTION_KEY') || '0000000000000000000000000000000000000000000000000000000000000000';
+        const secret = this.configService.get<string>('ENCRYPTION_KEY');
+        if (!secret) {
+            throw new Error('ENCRYPTION_KEY must be defined in environment configuration');
+        }
         return Buffer.from(secret, 'hex');
     }
 

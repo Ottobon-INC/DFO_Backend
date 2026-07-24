@@ -28,7 +28,7 @@ export class PatientAuthController {
         try {
             const { mobile, pin, clinic_id } = body;
             this.logger.log(`Patient login attempt: mobile="${mobile}", clinic_id="${clinic_id || 'unspecified'}"`);
-            
+
             if (!mobile || !pin) {
                 throw new HttpException({ success: false, error: 'Mobile number and PIN are required' }, HttpStatus.BAD_REQUEST);
             }
@@ -59,7 +59,7 @@ export class PatientAuthController {
             if (patient.locked_until) {
                 const lockTime = new Date(patient.locked_until).getTime();
                 const now = new Date().getTime();
-                
+
                 if (now < lockTime) {
                     const remainingMinutes = Math.ceil((lockTime - now) / 60000);
                     throw new HttpException(
@@ -104,13 +104,13 @@ export class PatientAuthController {
 
             // 5. Issue JWT Token (with clinic_id context)
             const token = jwt.sign(
-                { 
-                    sub: patient.id, 
+                {
+                    sub: patient.id,
                     patient_id: patient.id,
                     clinic_id: patient.clinic_id,
                     uhid: patient.uhid,
-                    mobile: patient.mobile, 
-                    role: 'patient', 
+                    mobile: patient.mobile,
+                    role: 'patient',
                     name: patient.name,
                 },
                 this.jwtSecret,

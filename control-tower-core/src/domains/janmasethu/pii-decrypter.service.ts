@@ -13,7 +13,10 @@ export class PiiDecrypterService {
     private initializeKey() {
         try {
             // Read Chatbot master key or PII secret key from env variables
-            const secret = process.env.PII_SECRET_KEY || 'dev_static_secret_key_123_must_be_changed_in_prod';
+            const secret = process.env.PII_SECRET_KEY;
+            if (!secret) {
+                throw new Error('PII_SECRET_KEY must be defined in environment variables');
+            }
             let keyStr = secret;
             if (keyStr.length < 32) {
                 keyStr = keyStr.padEnd(32, '0');
