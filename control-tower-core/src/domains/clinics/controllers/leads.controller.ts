@@ -78,7 +78,6 @@ export class LeadsController {
             
             const clinic_id = TenantContext.getClinicId() || '';
             const payload = this.utils.sanitizePayload({
-                clinic_id,
                 name, phone, date_added: tv(body.date_added), status: normalizeStatus(tv(body.status)),
                 age: tv(body.age), gender: tv(body.gender), source: tv(body.source), inquiry: tv(body.inquiry),
                 problem: this.encryption.encrypt(tv(body.problem)), treatment_doctor: this.encryption.encrypt(tv(body.treatment_doctor)),

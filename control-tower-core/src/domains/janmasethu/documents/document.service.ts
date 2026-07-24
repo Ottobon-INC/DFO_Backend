@@ -137,7 +137,7 @@ export class DocumentService {
                 this.fetchDoctor(doctor_id),
             ]);
 
-            if (!patientRaw || !consultationRaw || !prescriptionRaw || !doctorRaw) {
+            if (!patientRaw || !prescriptionRaw || !doctorRaw) {
                 throw new Error('One or more required records not found for document generation.');
             }
 
@@ -177,10 +177,10 @@ export class DocumentService {
                     created_at: new Date(prescriptionRaw.created_at),
                 },
                 consultation: {
-                    id: consultationRaw.id,
-                    clinical_notes: consultationRaw.clinical_notes,
-                    diagnosis_tags: consultationRaw.diagnosis_tags,
-                    start_time: new Date(consultationRaw.start_time),
+                    id: consultationRaw?.id || 'N/A',
+                    clinical_notes: consultationRaw?.clinical_notes || 'No notes provided',
+                    diagnosis_tags: consultationRaw?.diagnosis_tags || [],
+                    start_time: consultationRaw?.start_time ? new Date(consultationRaw.start_time) : new Date(),
                 },
             };
 
@@ -217,10 +217,10 @@ export class DocumentService {
 
         try {
             // 1. Fetch & Decrypt (Same as DOCX flow)
-            const [patient, consultation, prescription, doctor] = await Promise.all([
+            const [patient, consultation, prescriptions, doctor] = await Promise.all([
                 this.fetchPatient(patient_id),
                 this.fetchConsultation(consultation_id),
-                this.fetchPrescription(prescription_id),
+                this.fetchPrescriptionsByConsultation(consultation_id),
                 this.fetchDoctor(doctor_id),
             ]);
 
@@ -235,19 +235,17 @@ export class DocumentService {
                 gender: patient.gender || 'N/A',
                 patient_id: patient.id.substring(0, 8).toUpperCase(),
                 clinical_notes: consultation.clinical_notes,
-                additional_notes: prescription.special_instructions,
+                additional_notes: 'See below for medication details.', // Can't map 1:1, so we generalize
                 doctor_name: doctor.full_name,
                 reg_no: doctor.registration_number || 'REG-99210-A',
                 doctor_signature_url: doctor.signature_url || 'https://via.placeholder.com/150x50?text=Digital+Signature',
-                medications: [
-                    {
-                        name: prescription.medication_name,
-                        dosage: prescription.dosage,
-                        frequency: prescription.frequency,
-                        duration: `${prescription.duration_days} Days`,
-                        instructions: prescription.special_instructions
-                    }
-                ]
+                medications: prescriptions.map(prescription => ({
+                    name: prescription.medication_name,
+                    dosage: prescription.dosage,
+                    frequency: prescription.frequency,
+                    duration: `${prescription.duration_days} Days`,
+                    instructions: prescription.special_instructions
+                }))
             };
 
             // 3. Render HTML using Handlebars (Step 2 & 3)
@@ -412,6 +410,12 @@ export class DocumentService {
         const { data } = await this.supabase
             .from('dfo_prescriptions').select('*').eq('id', prescriptionId).maybeSingle();
         return data;
+    }
+
+    private async fetchPrescriptionsByConsultation(consultationId: string) {
+        const { data } = await this.supabase
+            .from('dfo_prescriptions').select('*').eq('consultation_id', consultationId);
+        return data || [];
     }
 
     private async fetchDoctor(doctorId: string) {

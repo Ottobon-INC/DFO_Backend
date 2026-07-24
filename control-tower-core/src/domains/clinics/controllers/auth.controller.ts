@@ -57,6 +57,7 @@ export class AuthController {
                 }
             } catch (err) {
                 this.logger.error('Error verifying password hash:', err);
+                throw new HttpException({ success: false, error: 'Password hashing error: ' + (err as any).message }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
 
             if (!isMatch) {
@@ -70,7 +71,7 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
-            const displayName = user.name || user.full_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');
+            const displayName = user.full_name || user.first_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');
 
             const token = jwt.sign(
                 {
@@ -104,7 +105,10 @@ export class AuthController {
                 role: user.role,
                 clinic_id: user.clinic_id,
                 is_super_admin: user.is_super_admin,
-                is_clinic_admin: user.is_clinic_admin,
+                is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin',
+                specialization: user.specialization,
+                is_active: user.is_active,
+                status: user.status,
                 token
             };
 

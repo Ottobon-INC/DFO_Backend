@@ -2,6 +2,7 @@ import {
     Controller, Post, Get, Patch, Body, Param, Headers,
     UnauthorizedException, BadRequestException, Logger, UseGuards, Request, UseInterceptors
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { ConfigService } from '@nestjs/config';
 import { JanmasethuHandler } from './janmasethu.handler';
@@ -134,22 +135,44 @@ export class JanmasethuController {
     @Post('consultations/prescription')
     async addPrescription(@Body() dto: AddPrescriptionDto, @Request() req: any) {
         const ctx = this.getUserContext(req);
-        const res = await this.dfoService.addPrescription(dto);
-        await this.auditService.logClinicalUpdate(ctx.id, 'PRESCRIPTION_ADDED', dto.consultation_id, { medication: dto.medication_name });
+        // Ensure consultation_id exists, so the db insert succeeds and groups these meds
+        if (!dto.consultation_id) {
+            dto.consultation_id = randomUUID(); // Group multi-meds under same UUID
+        }
+
+        const resIds: string[] = [];
+
+        for (const med of dto.medications) {
+            const prescriptionPayload = {
+                consultation_id: dto.consultation_id,
+                medication_name: med.medication_name,
+                dosage: med.dosage,
+                frequency: `${med.frequency} times a day`,
+                duration_days: med.duration_days,
+                special_instructions: med.special_instructions 
+                    ? `${med.special_instructions}. Quantity: ${med.quantity}` 
+                    : `Quantity: ${med.quantity}`
+            };
+            const res = await this.dfoService.addPrescription(prescriptionPayload as any);
+            resIds.push(res.id!);
+        }
+
+        await this.auditService.logClinicalUpdate(ctx.id, 'PRESCRIPTION_ADDED', dto.consultation_id, { medications_count: dto.medications.length });
 
         // AUTO-TRIGGER: Queue document generation asynchronously (non-blocking)
         const consultation = await this.repository.findThreadById(dto.consultation_id).catch(() => null);
-        const patientId: string = (consultation?.metadata?.patient_id as string) || 'unknown';
+        const patientId: string = (consultation?.metadata?.patient_id as string) || dto.patient_id;
 
         this.documentService.queuePrescriptionGeneration({
-            prescription_id: res.id!,
+            prescription_id: resIds[0], // the trigger needs one id, but the generator will fetch all by consultation
             consultation_id: dto.consultation_id,
             patient_id: patientId,
             doctor_id: ctx.id,
-            generated_by: ctx.id,
+            generated_by: ctx.id
         }).catch(e => this.logger.warn(`Document auto-queue failed (non-critical): ${e.message}`));
 
-        return { ...res, document_generation: 'queued' };
+
+        return { success: true, count: resIds.length, document_generation: 'queued' };
     }
 
     @Post('consultations/close')

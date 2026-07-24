@@ -40,10 +40,10 @@ export class TenantInterceptor implements NestInterceptor {
           is_super_admin: decoded.is_super_admin,
           is_clinic_admin: decoded.is_clinic_admin,
         };
-      } catch (error) {
+      } catch (error: any) {
         // Fail-soft: if token is expired or invalid, we don't throw an error here.
         // The existing AuthGuards will handle throwing the 401.
-        this.logger.debug('Failed to verify JWT in TenantInterceptor. Proceeding without context.');
+        this.logger.error(`Failed to verify JWT in TenantInterceptor: ${error.message}`);
       }
     }
 

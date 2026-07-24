@@ -1,4 +1,4 @@
-import { IsEnum, IsUUID, IsString, IsNotEmpty, IsOptional, IsDateString, IsInt, Min, Max, IsEmail } from 'class-validator';
+import { IsEnum, IsUUID, IsString, IsNotEmpty, IsOptional, IsDateString, IsInt, Min, Max, IsEmail, ValidateNested, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JourneyStage, AppointmentStatus } from '../dfo.types';
 
@@ -69,10 +69,7 @@ export class CloseConsultationDto {
     notes: string;
 }
 
-export class AddPrescriptionDto {
-    @IsUUID()
-    consultation_id: string;
-
+export class MedicationItemDto {
     @IsString()
     @IsNotEmpty()
     medication_name: string;
@@ -80,8 +77,11 @@ export class AddPrescriptionDto {
     @IsString()
     dosage: string;
 
+    @IsInt()
+    frequency: number;
+
     @IsString()
-    frequency: string;
+    quantity: string;
 
     @IsInt()
     duration_days: number;
@@ -89,6 +89,20 @@ export class AddPrescriptionDto {
     @IsString()
     @IsOptional()
     special_instructions?: string;
+}
+
+export class AddPrescriptionDto {
+    @IsUUID()
+    @IsOptional()
+    consultation_id?: string;
+
+    @IsUUID()
+    patient_id: string;
+
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => MedicationItemDto)
+    medications: MedicationItemDto[];
 }
 
 export class UploadReportDto {

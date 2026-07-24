@@ -1,6 +1,7 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { DFODocument, DocumentType, DocumentGenerationStatus } from './document.types';
+import { TenantContext } from '../../../infrastructure/context/tenant.context';
 
 @Injectable()
 export class DocumentRepository {
@@ -49,7 +50,7 @@ export class DocumentRepository {
     async findByPrescriptionId(prescriptionId: string): Promise<DFODocument | null> {
         let matchingId: string | null = null;
         for (const [id, meta] of this.documentMetadata.entries()) {
-            if (meta.prescription_id === prescriptionId && meta.generation_status === DocumentGenerationStatus.GENERATED) {
+            if (meta.prescription_id === prescriptionId) {
                 matchingId = id;
             }
         }
@@ -87,6 +88,7 @@ export class DocumentRepository {
         const payload = {
             id,
             patient_id: dto.patient_id,
+            clinic_id: TenantContext.getClinicId(), // Pass the tenant context
             name: dto.file_name,
             file_path: dto.file_path,
             mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
