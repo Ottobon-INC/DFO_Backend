@@ -112,7 +112,6 @@ export class PatientAuthController {
                     mobile: patient.mobile, 
                     role: 'patient', 
                     name: patient.name,
-                    clinic_id: patient.clinic_id,
                 },
                 this.jwtSecret,
                 { expiresIn: this.jwtExpiresIn },
@@ -127,7 +126,6 @@ export class PatientAuthController {
                     uhid: patient.uhid,
                     name: patient.name,
                     mobile: patient.mobile,
-                    clinic_id: patient.clinic_id
                 }
             };
 
