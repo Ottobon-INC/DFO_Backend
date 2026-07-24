@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
@@ -7,8 +7,10 @@ import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { StaffCacheService } from '../services/staff-cache.service';
+import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 
 @Controller('api/v1/clinics/staff')
+@UseGuards(ClinicsAuthGuard)
 export class StaffController {
     private readonly logger = new Logger(StaffController.name);
 

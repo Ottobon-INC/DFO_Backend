@@ -4,6 +4,8 @@ import {
   Injectable,
   NestInterceptor,
   Logger,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Observable } from 'rxjs';
@@ -16,7 +18,8 @@ export class TenantInterceptor implements NestInterceptor {
   private readonly jwtSecret: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
+    this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+    if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {

@@ -1,4 +1,5 @@
-import { Controller, Post, Get, Body, Logger, HttpException, HttpStatus, Headers, Patch } from '@nestjs/common';
+import { Controller, Post, Get, Body, Logger, HttpException, HttpStatus, Headers, Patch, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -6,6 +7,7 @@ import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
 import { AuthEvent } from '../../../infrastructure/events/event-payloads';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import * as jwt from 'jsonwebtoken';
+import * as bcrypt from 'bcrypt';
 
 @Controller('api/auth')
 export class AuthController {
@@ -18,9 +20,12 @@ export class AuthController {
         private readonly configService: ConfigService,
         @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+        if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
     }
 
+    @UseGuards(ThrottlerGuard)
+    @Throttle({ default: { limit: 5, ttl: 60000 } })
     @Post('login')
     async login(@Body() body: { email: string; password: string }) {
         try {
@@ -45,22 +50,48 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'User has no password set. Please contact admin.' }, HttpStatus.UNAUTHORIZED);
             }
 
-            // Support both bcrypt and legacy password-hash algorithms
+            // 2. Check Lockout State
+            if (user.locked_until) {
+                const lockTime = new Date(user.locked_until).getTime();
+                const now = new Date().getTime();
+                if (now < lockTime) {
+                    const remainingMinutes = Math.ceil((lockTime - now) / 60000);
+                    throw new HttpException(
+                        { success: false, error: `Account locked. Try again in ${remainingMinutes} minutes.` },
+                        HttpStatus.FORBIDDEN
+                    );
+                }
+            }
+
+            // 3. Crypto Verification & Transparent Upgrade
             let isMatch = false;
+            let needsBcryptUpgrade = false;
+
             try {
-                if (user.password_hash.startsWith('$2b$') || user.password_hash.startsWith('$2a$')) {
-                    const bcrypt = require('bcrypt');
-                    isMatch = await bcrypt.compare(password, user.password_hash);
-                } else {
+                if (user.password_hash.startsWith('sha1$') || (!user.password_hash.startsWith('$2b$') && !user.password_hash.startsWith('$2a$'))) {
                     const passwordHash = require('password-hash');
-                    isMatch = passwordHash.verify(password, user.password_hash);
+                    if (passwordHash.verify(password, user.password_hash)) {
+                        isMatch = true;
+                        needsBcryptUpgrade = true;
+                    }
+                } else {
+                    isMatch = await bcrypt.compare(password, user.password_hash);
                 }
             } catch (err) {
                 this.logger.error('Error verifying password hash:', err);
                 throw new HttpException({ success: false, error: 'Password hashing error: ' + (err as any).message }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
 
+            // 4. Handle Failure & Counter
             if (!isMatch) {
+                const newAttempts = (user.failed_attempts || 0) + 1;
+                const updateData: any = { failed_attempts: newAttempts };
+                if (newAttempts >= 5) {
+                    const lockUntilDate = new Date(new Date().getTime() + 15 * 60000);
+                    updateData.locked_until = lockUntilDate.toISOString();
+                }
+                await supabase.from('sakhi_clinic_users').update(updateData).eq('id', user.id);
+
                 try {
                     await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN_FAILED, new AuthEvent(
                         null, null, { action: 'login_failed', username: email, reason: 'Invalid credentials' }
@@ -71,7 +102,15 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
-            const displayName = user.full_name || user.first_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');
+            // Successful login -> Reset lockout and upgrade hash if needed
+            const updateSuccessData: any = { failed_attempts: 0, locked_until: null };
+            if (needsBcryptUpgrade) {
+                updateSuccessData.password_hash = await bcrypt.hash(password, 10);
+            }
+            await supabase.from('sakhi_clinic_users').update(updateSuccessData).eq('id', user.id);
+
+            const displayName = user.name || user.full_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');
+
 
             const token = jwt.sign(
                 {
@@ -277,23 +316,11 @@ export class AuthController {
         } catch {
             // fallback
         }
-        if (!isMatch && user.password_hash === currentPassword) {
-            isMatch = true; // Dev fallback
-        }
-
         if (!isMatch) {
             throw new HttpException({ success: false, error: 'Incorrect current password' }, HttpStatus.UNAUTHORIZED);
         }
 
-        let new_password_hash = newPassword;
-        try {
-            const passwordHash = require('password-hash');
-            new_password_hash = passwordHash.generate(newPassword);
-        } catch {
-            // User requested strictly require hashed password, but if library is missing we might fail.
-            // We'll throw an error if hashing fails instead of falling back to plain text.
-            throw new HttpException({ success: false, error: 'Password hashing library missing. Cannot securely change password.' }, HttpStatus.INTERNAL_SERVER_ERROR);
-        }
+        let new_password_hash = await bcrypt.hash(newPassword, 10);
 
         const { error: updateError } = await supabase
             .from('sakhi_clinic_users')

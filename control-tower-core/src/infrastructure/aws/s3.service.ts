@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { basename } from 'path';
 
 @Injectable()
 export class S3Service {
@@ -38,8 +39,9 @@ export class S3Service {
      * @returns A promise that resolves to the presigned upload URL and the path.
      */
     async generatePresignedUploadUrl(clinicId: string, filename: string, documentType: string = 'staging'): Promise<{ uploadUrl: string; path: string }> {
-        // Sanitize the filename to avoid unexpected behavior
-        const safeFilename = filename.replace(/\s+/g, '_');
+        // Strictly sanitize the filename to prevent path traversal
+        const baseFilename = basename(filename);
+        const safeFilename = baseFilename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
         
         // Sanitize the document type to avoid directory traversal
         const safeDocumentType = documentType.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase() || 'staging';

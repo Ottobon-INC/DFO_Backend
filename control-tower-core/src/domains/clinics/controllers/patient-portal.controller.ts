@@ -14,7 +14,8 @@ export class PatientPortalController {
         private readonly configService: ConfigService,
         private readonly s3Service: S3Service,
     ) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+        if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
     }
 
     private verifyPatientToken(authHeader?: string) {

@@ -1,11 +1,14 @@
-import { Controller, Get, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, UseGuards, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
+import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
+import { TenantContext } from '../../../infrastructure/context/tenant.context';
 
 const CONVERTED_STATUSES = ['Converted Patient', 'Converted - Active Patient'];
 const LOST_STATUSES = ['Lost', 'Inactive', 'Dropped'];
 const CRO_QUEUE_STATUS = 'Stalling - Sent to CRO';
 
 @Controller('api/dashboard')
+@UseGuards(ClinicsAuthGuard)
 export class DashboardController {
     private readonly logger = new Logger(DashboardController.name);
 
@@ -13,21 +16,31 @@ export class DashboardController {
 
     @Get('summary')
     async getSummary() {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
         try {
             const { data: todayAppointments, error: apptErr } = await supabase
-                .from('sakhi_clinic_appointments').select('*')
+                .from('sakhi_clinic_appointments')
+                .select('*')
+                .eq('clinic_id', clinic_id)
                 .order('appointment_date', { ascending: true })
                 .order('start_time', { ascending: true });
             if (apptErr) throw apptErr;
 
             const { data: recentLeads, error: leadsError } = await supabase
-                .from('sakhi_clinic_leads').select('*')
-                .order('date_added', { ascending: false }).limit(5);
+                .from('sakhi_clinic_leads')
+                .select('*')
+                .eq('clinic_id', clinic_id)
+                .order('date_added', { ascending: false })
+                .limit(5);
             if (leadsError) throw leadsError;
 
             const { data: leadStatuses, error: funnelError } = await supabase
-                .from('sakhi_clinic_leads').select('status');
+                .from('sakhi_clinic_leads')
+                .select('status')
+                .eq('clinic_id', clinic_id);
             if (funnelError) throw funnelError;
 
             const funnelCounts = (leadStatuses || []).reduce<Record<string, number>>((acc, row) => {
@@ -39,6 +52,7 @@ export class DashboardController {
 
             return { success: true, data: { todayAppointments, recentLeads, leadFunnel } };
         } catch (error: any) {
+            if (error instanceof HttpException) throw error;
             this.logger.error('GET /api/dashboard/summary', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
@@ -46,10 +60,15 @@ export class DashboardController {
 
     @Get('cro')
     async getCro() {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
         try {
             const { data: leads, error: leadsError } = await supabase
-                .from('sakhi_clinic_leads').select('id, status, date_added, created_at');
+                .from('sakhi_clinic_leads')
+                .select('id, status, date_added, created_at')
+                .eq('clinic_id', clinic_id);
             if (leadsError) throw leadsError;
 
             const totalLeads = leads?.length ?? 0;
@@ -65,7 +84,10 @@ export class DashboardController {
             // Average time to convert
             let avgTimeToConvertDays = 0;
             const { data: patientLinks, error: patientLinksError } = await supabase
-                .from('sakhi_clinic_patients').select('lead_id, registration_date, created_at').not('lead_id', 'is', null);
+                .from('sakhi_clinic_patients')
+                .select('lead_id, registration_date, created_at')
+                .eq('clinic_id', clinic_id)
+                .not('lead_id', 'is', null);
             if (patientLinksError) throw patientLinksError;
 
             const leadMap = new Map<string, any>();
@@ -99,8 +121,11 @@ export class DashboardController {
 
             // Intervention queue
             const { data: queueDataRaw, error: queueError } = await supabase
-                .from('sakhi_clinic_leads').select('id, name, phone, status, date_added, created_at')
-                .eq('status', CRO_QUEUE_STATUS).order('date_added', { ascending: true });
+                .from('sakhi_clinic_leads')
+                .select('id, name, phone, status, date_added, created_at')
+                .eq('clinic_id', clinic_id)
+                .eq('status', CRO_QUEUE_STATUS)
+                .order('date_added', { ascending: true });
             if (queueError) throw queueError;
 
             const now = Date.now();
@@ -119,6 +144,7 @@ export class DashboardController {
                 },
             };
         } catch (error: any) {
+            if (error instanceof HttpException) throw error;
             this.logger.error('GET /api/dashboard/cro', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }

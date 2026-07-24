@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus, UseGuards, Req } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
@@ -7,6 +7,8 @@ import { CreateClinicDto } from '../dto/create-clinic.dto';
 import { StaffCacheService } from '../services/staff-cache.service';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
 import { StaffEvent } from '../../../infrastructure/events/event-payloads';
+import * as bcrypt from 'bcrypt';
+import { v4 as uuidv4 } from 'uuid';
 
 @Controller('api/v1/superadmin')
 @UseGuards(SuperAdminGuard)
@@ -22,59 +24,78 @@ export class SuperAdminController {
     ) {}
 
     @Post('clinics')
-    async createClinic(@Body() body: CreateClinicDto) {
-        const { clinic_name, owner_name, owner_email, owner_role } = body;
+    async createClinic(@Req() req: any, @Body() body: CreateClinicDto) {
+        const { clinic_name, owner_name, owner_email, owner_role, request_id } = body;
         const supabase = this.supabaseService.getClient();
+        const super_admin_id = req.user?.sub;
+
+        if (!super_admin_id) {
+            throw new HttpException({ success: false, error: 'Unauthorized: Missing super admin identity' }, HttpStatus.UNAUTHORIZED);
+        }
 
         try {
-            // Step 1: Insert Clinic
-            const { data: clinic, error: clinicError } = await supabase
-                .from('clinics')
-                .insert([{ name: clinic_name }])
-                .select()
-                .single();
+            const idempotency_key = request_id || uuidv4();
+            const tempPassword = 'Temporary123!';
+            const password_hash = await bcrypt.hash(tempPassword, 10);
+            const role = owner_role || 'Doctor';
 
-            if (clinicError) throw clinicError;
+            // Call atomic RPC
+            const { data: rpcData, error: rpcError } = await supabase.rpc('atomic_create_clinic', {
+                p_request_id: idempotency_key,
+                p_clinic_name: clinic_name,
+                p_owner_name: owner_name,
+                p_owner_email: owner_email,
+                p_owner_role: role,
+                p_password_hash: password_hash,
+                p_super_admin_id: super_admin_id
+            });
 
-            // Step 2: Insert Genesis Admin (Owner)
-            // Generate a random temporary password or leave it to be set later via email link
-            let password_hash = 'Temporary123!';
-            try {
-                const passwordHash = require('password-hash');
-                password_hash = passwordHash.generate(password_hash);
-            } catch {}
+            if (rpcError) {
+                this.logger.error('RPC execution failed', rpcError);
+                throw new HttpException({ success: false, error: 'Internal Server Error during creation' }, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
 
-            const adminPayload = {
-                name: owner_name,
-                email: owner_email,
-                password_hash,
-                role: owner_role || 'Doctor', // Use the user-provided role
-                clinic_id: clinic.id,
-                is_clinic_admin: true,
-                is_super_admin: false,
-            };
+            // Check structured response
+            if (rpcData?.status === 'error') {
+                if (rpcData.code === 'EMAIL_ALREADY_REGISTERED') {
+                    // Log the conflict
+                    this.logger.warn(`Clinic creation failed: Email ${owner_email} is already registered.`);
+                    
+                    // Emit event for observability
+                    await this.eventsQueue.add('CLINIC_CREATION_FAILED', {
+                        action: 'clinic_creation_conflict',
+                        email: owner_email,
+                        super_admin_id,
+                        timestamp: new Date().toISOString()
+                    }, { attempts: 3 });
 
-            const { data: adminUser, error: adminError } = await supabase
-                .from('sakhi_clinic_users')
-                .insert([adminPayload])
-                .select('id, name, email, role, clinic_id, is_clinic_admin')
-                .single();
-
-            if (adminError) {
-                // If it fails, log it, but the clinic was already created.
-                this.logger.error('Failed to create genesis admin, but clinic was created', adminError);
-                if (adminError.code === '23505') {
-                   throw new HttpException({ success: false, error: 'Clinic created, but owner email already exists' }, HttpStatus.CONFLICT);
+                    throw new HttpException({ 
+                        success: false, 
+                        error: 'Owner email is already registered. Please use a different email address.',
+                        code: 'EMAIL_ALREADY_REGISTERED',
+                        conflict_email: owner_email
+                    }, HttpStatus.CONFLICT);
                 }
-                throw adminError;
+                
+                if (rpcData.code === 'UNAUTHORIZED') {
+                    throw new HttpException({ success: false, error: rpcData.message }, HttpStatus.FORBIDDEN);
+                }
+                
+                throw new HttpException({ success: false, error: rpcData.message || 'Unknown error occurred' }, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+
+            // Success (either new creation or idempotent hit)
+            const isIdempotent = rpcData.idempotent === true;
+            if (isIdempotent) {
+                this.logger.log(`Idempotent hit for clinic creation request ${idempotency_key}`);
             }
 
             return { 
                 success: true, 
-                message: 'Clinic and Admin created successfully',
+                message: isIdempotent ? 'Clinic already created (idempotent request)' : 'Clinic and Admin created successfully',
                 data: {
-                    clinic,
-                    admin: adminUser
+                    clinic: { id: rpcData.clinic_id, name: clinic_name },
+                    admin: { id: rpcData.admin_id, name: owner_name, email: owner_email, role, clinic_id: rpcData.clinic_id, is_clinic_admin: true }
                 } 
             };
         } catch (error: any) {
@@ -91,6 +112,7 @@ export class SuperAdminController {
             const { data: clinics, error } = await supabase
                 .from('clinics')
                 .select('*')
+                .eq('is_active', true)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;

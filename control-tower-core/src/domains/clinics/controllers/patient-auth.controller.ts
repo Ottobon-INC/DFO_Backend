@@ -1,4 +1,5 @@
-import { Controller, Post, Body, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import * as jwt from 'jsonwebtoken';
@@ -16,14 +17,17 @@ export class PatientAuthController {
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly configService: ConfigService,
     ) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+        if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
     }
 
+    @UseGuards(ThrottlerGuard)
+    @Throttle({ default: { limit: 5, ttl: 60000 } })
     @Post('login')
-    async login(@Body() body: { mobile: string; pin: string }) {
+    async login(@Body() body: { mobile: string; pin: string; clinic_id?: string }) {
         try {
-            const { mobile, pin } = body;
-            this.logger.log(`Patient login attempt: mobile="${mobile}"`);
+            const { mobile, pin, clinic_id } = body;
+            this.logger.log(`Patient login attempt: mobile="${mobile}", clinic_id="${clinic_id || 'unspecified'}"`);
             
             if (!mobile || !pin) {
                 throw new HttpException({ success: false, error: 'Mobile number and PIN are required' }, HttpStatus.BAD_REQUEST);
@@ -31,17 +35,25 @@ export class PatientAuthController {
 
             const supabase = this.supabaseService.getClient();
 
-            // 1. Fetch patient record by mobile number
-            const { data: patient, error } = await supabase
+            // 1. Fetch patient record by mobile number (and clinic_id if specified to disambiguate multi-tenant patients)
+            let patientQuery = supabase
                 .from('sakhi_clinic_patients')
-                .select('id, name, mobile, uhid, pin_hash, failed_attempts, locked_until, clinic_id')
-                .eq('mobile', mobile)
-                .single();
+                .select('id, clinic_id, name, mobile, uhid, pin_hash, failed_attempts, locked_until')
+                .eq('mobile', mobile);
 
-            if (error || !patient) {
+            if (clinic_id) {
+                patientQuery = patientQuery.eq('clinic_id', clinic_id);
+            }
+
+            const { data: patients, error } = await patientQuery.limit(5);
+
+            if (error || !patients || patients.length === 0) {
                 // Return a generic error to prevent user enumeration
                 throw new HttpException({ success: false, error: 'Invalid mobile number or PIN' }, HttpStatus.UNAUTHORIZED);
             }
+
+            // If multiple records exist for this phone number across clinics and no clinic_id was specified, pick the first active PIN record
+            const patient = patients.find(p => !!p.pin_hash) || patients[0];
 
             // 2. Check Lockout State
             if (patient.locked_until) {
@@ -64,7 +76,6 @@ export class PatientAuthController {
 
             // 3. Crypto Verification
             let isPinValid = await bcrypt.compare(pin, patient.pin_hash);
-
 
 
             // 4. Handle Failure & Counter
@@ -91,11 +102,12 @@ export class PatientAuthController {
                 .update({ failed_attempts: 0, locked_until: null })
                 .eq('id', patient.id);
 
-            // 5. Issue JWT Token
+            // 5. Issue JWT Token (with clinic_id context)
             const token = jwt.sign(
                 { 
                     sub: patient.id, 
                     patient_id: patient.id,
+                    clinic_id: patient.clinic_id,
                     uhid: patient.uhid,
                     mobile: patient.mobile, 
                     role: 'patient', 
@@ -111,6 +123,7 @@ export class PatientAuthController {
                 token,
                 user: {
                     id: patient.id,
+                    clinic_id: patient.clinic_id,
                     uhid: patient.uhid,
                     name: patient.name,
                     mobile: patient.mobile,

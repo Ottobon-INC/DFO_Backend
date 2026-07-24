@@ -4,6 +4,7 @@ import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import * as jwt from 'jsonwebtoken';
+import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
 import { StaffCacheService } from '../services/staff-cache.service';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
@@ -20,7 +21,8 @@ export class UsersController {
         private readonly staffCache: StaffCacheService,
         @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+        if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
     }
 
     private verifyToken(authHeader?: string) {
@@ -104,15 +106,8 @@ export class UsersController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            // Hash password
-            let password_hash = password;
-            try {
-                const bcrypt = require('bcrypt');
-                password_hash = await bcrypt.hash(password, 10);
-            } catch (err) {
-                this.logger.error('Failed to hash password during user creation:', err);
-                throw new HttpException({ success: false, error: 'Internal server error' }, HttpStatus.INTERNAL_SERVER_ERROR);
-            }
+            // Hash password using bcrypt
+            const password_hash = await bcrypt.hash(password, 10);
 
             // Force the new user to be in the same clinic as the admin who is creating them
             const payload = {
@@ -252,14 +247,8 @@ export class UsersController {
             }
 
             if (password) {
-                let password_hash = password;
-                try {
-                    const passwordHash = require('password-hash');
-                    password_hash = passwordHash.generate(password);
-                } catch {
-                    // dev fallback
-                }
-                updatePayload.password_hash = password_hash;
+                // Hash password using bcrypt
+                updatePayload.password_hash = await bcrypt.hash(password, 10);
             }
 
             if (Object.keys(updatePayload).length === 0) {

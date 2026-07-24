@@ -1,7 +1,9 @@
-import { Controller, Post, Body, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import * as jwt from 'jsonwebtoken';
+import * as bcrypt from 'bcrypt';
 
 @Controller('api/v1/superadmin/auth')
 export class SuperAdminAuthController {
@@ -14,10 +16,14 @@ export class SuperAdminAuthController {
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly configService: ConfigService,
     ) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
-        this.superAdminSecret = this.configService.get<string>('SUPER_ADMIN_SECRET') || 'MedcyLaunch2026';
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+        if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
+        this.superAdminSecret = this.configService.get<string>('SUPER_ADMIN_SECRET') as string;
+        if (!this.superAdminSecret) throw new Error('SUPER_ADMIN_SECRET must be defined in environment configuration');
     }
 
+    @UseGuards(ThrottlerGuard)
+    @Throttle({ default: { limit: 5, ttl: 60000 } })
     @Post('login')
     async login(@Body() body: { email: string; password: string }) {
         try {
@@ -39,20 +45,56 @@ export class SuperAdminAuthController {
                 throw new HttpException({ success: false, error: 'Invalid super admin credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
-            // Verify password
-            let isMatch = false;
-            try {
-                const passwordHash = require('password-hash');
-                if (passwordHash.verify(password, user.password_hash)) {
-                    isMatch = true;
+            // 2. Check Lockout State
+            if (user.locked_until) {
+                const lockTime = new Date(user.locked_until).getTime();
+                const now = new Date().getTime();
+                if (now < lockTime) {
+                    const remainingMinutes = Math.ceil((lockTime - now) / 60000);
+                    throw new HttpException(
+                        { success: false, error: `Account locked. Try again in ${remainingMinutes} minutes.` },
+                        HttpStatus.FORBIDDEN
+                    );
                 }
-            } catch {}
+            }
 
+            // 3. Crypto Verification & Transparent Upgrade
+            let isMatch = false;
+            let needsBcryptUpgrade = false;
 
+            if (user.password_hash.startsWith('sha1$')) {
+                try {
+                    const passwordHash = require('password-hash');
+                    if (passwordHash.verify(password, user.password_hash)) {
+                        isMatch = true;
+                        needsBcryptUpgrade = true;
+                    }
+                } catch (err) {
+                    this.logger.error('Error verifying sha1 hash:', err);
+                }
+            } else {
+                isMatch = await bcrypt.compare(password, user.password_hash);
+            }
 
+            // 4. Handle Failure & Counter
             if (!isMatch) {
+                const newAttempts = (user.failed_attempts || 0) + 1;
+                const updateData: any = { failed_attempts: newAttempts };
+                if (newAttempts >= 5) {
+                    const lockUntilDate = new Date(new Date().getTime() + 15 * 60000);
+                    updateData.locked_until = lockUntilDate.toISOString();
+                }
+                await supabase.from('super_admins').update(updateData).eq('id', user.id);
+
                 throw new HttpException({ success: false, error: 'Invalid super admin credentials' }, HttpStatus.UNAUTHORIZED);
             }
+
+            // Successful login -> Reset lockout and upgrade hash if needed
+            const updateSuccessData: any = { failed_attempts: 0, locked_until: null };
+            if (needsBcryptUpgrade) {
+                updateSuccessData.password_hash = await bcrypt.hash(password, 10);
+            }
+            await supabase.from('super_admins').update(updateSuccessData).eq('id', user.id);
 
             // Issue JWT with super admin claims
             const token = jwt.sign(
@@ -105,12 +147,8 @@ export class SuperAdminAuthController {
 
             const supabase = this.supabaseService.getClient();
 
-            // Hash password
-            let password_hash = password;
-            try {
-                const passwordHash = require('password-hash');
-                password_hash = passwordHash.generate(password);
-            } catch {}
+            // Hash password using bcrypt
+            const password_hash = await bcrypt.hash(password, 10);
 
             // Insert into super_admins table
             const { data: newUser, error } = await supabase
