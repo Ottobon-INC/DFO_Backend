@@ -1,7 +1,9 @@
-import { Controller, Get, Query, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Query, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
+import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 
 @Controller('api/knowledge')
+@UseGuards(ClinicsAuthGuard)
 export class KnowledgeController {
     private readonly logger = new Logger(KnowledgeController.name);
 

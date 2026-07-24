@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { TerminusModule } from '@nestjs/terminus';
 import { KernelModule } from './kernel/kernel.module';
 import { DatabaseModule } from './infrastructure/database.module';
@@ -24,6 +25,10 @@ import configuration from './config/configuration';
     }),
     EventEmitterModule.forRoot(),
     TerminusModule,
+    ThrottlerModule.forRoot([{
+      ttl: 60000,
+      limit: 100, // Default 100 requests per minute
+    }]),
     DatabaseModule,
     QueueModule,
     RedisCacheModule,

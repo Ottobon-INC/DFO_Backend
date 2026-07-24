@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
@@ -6,8 +6,10 @@ import { AppointmentEvent } from '../../../infrastructure/events/event-payloads'
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
+import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 
 @Controller('api/v1/clinics/appointments')
+@UseGuards(ClinicsAuthGuard)
 export class AppointmentsController {
     private readonly logger = new Logger(AppointmentsController.name);
     private readonly allowedTypes = ['Consultation', 'Follow-up', 'Procedure', 'Emergency', 'Scan', 'Surgery', 'Camp'];

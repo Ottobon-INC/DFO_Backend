@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, Res, Logger, HttpException, HttpStatus, Request } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Query, Body, UseGuards, Res, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
-import { LeadEvent } from '../../../infrastructure/events/event-payloads';
+import { LeadEvent, PatientEvent } from '../../../infrastructure/events/event-payloads';
+import * as bcrypt from 'bcrypt';
 import { Response } from 'express';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
@@ -12,6 +13,7 @@ import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 import { COLUMN_MAPPINGS, VALID_STATUSES, SOURCE_VALUES, normalizeStatus, looksLikeSource, looksLikeStatus, normalizeLead } from '../helpers/leads.helpers';
 
 @Controller('api/leads')
+@UseGuards(ClinicsAuthGuard)
 export class LeadsController {
     private readonly logger = new Logger(LeadsController.name);
 
@@ -23,24 +25,24 @@ export class LeadsController {
     ) {}
 
     @Get()
-    @UseGuards(ClinicsAuthGuard)
     async list(
         @Query('page') page = '1', @Query('limit') limit = '20',
         @Query('phone') phone?: string, @Query('status') status?: string, @Query('q') q?: string,
-        @Request() req?: any,
     ) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
         const pageNum = Number(page);
         const limitNum = Number(limit);
         const from = (pageNum - 1) * limitNum;
         const to = from + limitNum - 1;
         try {
-            let query = supabase.from('sakhi_clinic_leads').select('*', { count: 'exact' }).order('date_added', { ascending: false }).range(from, to);
-            
-            const user = req?.user;
-            if (user && user.clinic_id) {
-                query = query.eq('clinic_id', user.clinic_id);
-            }
+            let query = supabase.from('sakhi_clinic_leads')
+                .select('*', { count: 'exact' })
+                .eq('clinic_id', clinic_id)
+                .order('date_added', { ascending: false })
+                .range(from, to);
 
             if (phone) query = query.eq('phone', phone);
             else if (status) query = query.eq('status', status);
@@ -51,14 +53,17 @@ export class LeadsController {
             const decryptedData = data?.map(lead => ({ ...lead, problem: this.encryption.decrypt(lead.problem), treatment_suggested: this.encryption.decrypt(lead.treatment_suggested), treatment_doctor: this.encryption.decrypt(lead.treatment_doctor) }));
             return { success: true, data: { items: decryptedData ?? [], pagination: { page: pageNum, limit: limitNum, total: count ?? data?.length ?? 0 } } };
         } catch (error: any) {
+            if (error instanceof HttpException) throw error;
             this.logger.error('GET /api/leads', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
     @Post()
-    @UseGuards(ClinicsAuthGuard)
-    async create(@Body() rawBody: any, @Request() req?: any) {
+    async create(@Body() rawBody: any) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
         const tv = this.utils.toValue.bind(this.utils);
         try {
@@ -73,9 +78,6 @@ export class LeadsController {
                 throw new HttpException({ success: false, error: 'Invalid phone number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
             }
 
-            const user = req?.user;
-            const resolvedClinicId = user?.clinic_id || body.clinic_id || null;
-            
             const payload = this.utils.sanitizePayload({
                 name, phone, date_added: tv(body.date_added), status: normalizeStatus(tv(body.status)),
                 age: tv(body.age), gender: tv(body.gender), source: tv(body.source), inquiry: tv(body.inquiry),
@@ -84,13 +86,12 @@ export class LeadsController {
                 assigned_to_user_id: tv(body.assigned_to_user_id), guardian_name: tv(body.guardian_name),
                 guardian_age: tv(body.guardian_age), location: tv(body.location),
                 alternate_phone: tv(body.alternate_phone), referral_required: tv(body.referral_required),
-                clinic_id: resolvedClinicId,
+                clinic_id,
             });
             const { data, error } = await supabase.from('sakhi_clinic_leads').insert(payload).select().single();
             if (error) throw error;
             
             const actor_id = TenantContext.getUserId();
-            const clinic_id = TenantContext.getClinicId() || '';
             await this.eventsQueue.add(DFO_EVENTS.LEAD_CREATED, new LeadEvent(
                 clinic_id, actor_id, data.id, { action: 'create_lead' }
             ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
@@ -104,16 +105,21 @@ export class LeadsController {
     }
 
     @Get('export')
-    @UseGuards(ClinicsAuthGuard)
-    async exportCsv(@Query('phone') phone?: string, @Query('status') status?: string, @Query('q') q?: string, @Res() res?: Response, @Request() req?: any) {
+    async exportCsv(@Query('phone') phone?: string, @Query('status') status?: string, @Query('q') q?: string, @Res() res?: Response) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        // RBAC Enforcement: Must be a clinic admin
+        if (!TenantContext.getState()?.is_clinic_admin && !TenantContext.isSuperAdmin()) {
+            throw new HttpException({ success: false, error: 'Only Clinic Admins can export leads' }, HttpStatus.FORBIDDEN);
+        }
+
         const supabase = this.supabaseService.getClient();
         try {
-            let query = supabase.from('sakhi_clinic_leads').select('*').order('date_added', { ascending: false });
-            
-            const user = req?.user;
-            if (user && user.clinic_id) {
-                query = query.eq('clinic_id', user.clinic_id);
-            }
+            let query = supabase.from('sakhi_clinic_leads')
+                .select('*')
+                .eq('clinic_id', clinic_id)
+                .order('date_added', { ascending: false });
 
             if (phone) query = query.eq('phone', phone);
             else if (status) query = query.eq('status', status);
@@ -129,14 +135,17 @@ export class LeadsController {
             res!.set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="leads_export.csv"' });
             res!.send(csvContent);
         } catch (error: any) {
+            if (error instanceof HttpException) throw error;
             this.logger.error('GET /api/leads/export', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 
     @Post('bulk')
-    @UseGuards(ClinicsAuthGuard)
     async bulkCreate(@Body() body: any) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
         const tv = this.utils.toValue.bind(this.utils);
         try {
@@ -148,7 +157,11 @@ export class LeadsController {
             const phonesForCheck = normalizedLeads.map(l => tv(l.phone)).filter((p: any): p is string => !!p);
             let existingPhones = new Set<string>();
             if (phonesForCheck.length > 0) {
-                const { data: existingData, error: checkError } = await supabase.from('sakhi_clinic_leads').select('phone').in('phone', phonesForCheck);
+                const { data: existingData, error: checkError } = await supabase
+                    .from('sakhi_clinic_leads')
+                    .select('phone')
+                    .eq('clinic_id', clinic_id)
+                    .in('phone', phonesForCheck);
                 if (checkError) throw checkError;
                 if (existingData) existingData.forEach(row => existingPhones.add(row.phone));
             }
@@ -158,6 +171,7 @@ export class LeadsController {
                 if (existingPhones.has(phone)) { errors.push({ phone, name, reason: 'Duplicate - already exists in database' }); continue; }
                 if (validLeadsToInsert.find(l => l.phone === phone)) { errors.push({ phone, name, reason: 'Duplicate in batch' }); continue; }
                 validLeadsToInsert.push(this.utils.sanitizePayload({
+                    clinic_id,
                     name, phone, status: normalizeStatus(tv(lead.status)), date_added: tv(lead.date_added),
                     age: tv(lead.age), gender: tv(lead.gender),
                     source: tv(lead.source) || (looksLikeSource(tv(lead.status)) ? tv(lead.status) : undefined),
@@ -176,7 +190,6 @@ export class LeadsController {
                     successCount = validLeadsToInsert.length;
                     
                     const actor_id = TenantContext.getUserId();
-                    const clinic_id = TenantContext.getClinicId() || '';
                     await this.eventsQueue.add(DFO_EVENTS.LEAD_BULK_IMPORTED, new LeadEvent(
                         clinic_id, actor_id, 'bulk_import', { action: 'bulk_import_leads', count: successCount }
                     ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
@@ -193,8 +206,16 @@ export class LeadsController {
     @Get(':id')
     async getById(@Param('id') id: string) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
-        const { data, error } = await supabase.from('sakhi_clinic_leads').select('*').eq('id', id).single();
+        const { data, error } = await supabase
+            .from('sakhi_clinic_leads')
+            .select('*')
+            .eq('id', id)
+            .eq('clinic_id', clinic_id)
+            .single();
         if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Lead not found' }, HttpStatus.NOT_FOUND);
         if (error) throw new HttpException({ success: false, error: error.message }, HttpStatus.INTERNAL_SERVER_ERROR);
         return { success: true, data };
@@ -203,6 +224,9 @@ export class LeadsController {
     @Patch(':id')
     async update(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
         const tv = this.utils.toValue.bind(this.utils);
         try {
@@ -217,12 +241,17 @@ export class LeadsController {
                 date_added: tv(body.date_added) ?? tv(body.dateAdded),
             });
             if (!Object.keys(updates).length) throw new HttpException({ success: false, error: 'No fields provided to update' }, HttpStatus.BAD_REQUEST);
-            const { data, error } = await supabase.from('sakhi_clinic_leads').update(updates).eq('id', id).select().single();
+            const { data, error } = await supabase
+                .from('sakhi_clinic_leads')
+                .update(updates)
+                .eq('id', id)
+                .eq('clinic_id', clinic_id)
+                .select()
+                .single();
             if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Lead not found' }, HttpStatus.NOT_FOUND);
             if (error) throw new HttpException({ success: false, error: error.message || 'Internal Server Error', details: error.details }, HttpStatus.INTERNAL_SERVER_ERROR);
             
             const actor_id = TenantContext.getUserId();
-            const clinic_id = TenantContext.getClinicId() || '';
             await this.eventsQueue.add(DFO_EVENTS.LEAD_UPDATED, new LeadEvent(
                 clinic_id, actor_id, id, { action: 'update_lead', status: updates.status }
             ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
@@ -238,9 +267,11 @@ export class LeadsController {
     @Post(':id/re-engage')
     async reEngage(@Param('id') id: string) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
         const supabase = this.supabaseService.getClient();
         try {
-            const clinic_id = TenantContext.getClinicId() || '';
             const updates = { status: 'Follow Up' };
             const { data, error } = await supabase.from('sakhi_clinic_leads').update(updates).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Lead not found' }, HttpStatus.NOT_FOUND);
@@ -255,6 +286,92 @@ export class LeadsController {
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`POST /api/leads/${id}/re-engage`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post(':id/convert')
+    async convertToPatient(@Param('id') id: string) {
+        if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            // 1. Fetch Lead
+            const { data: lead, error: leadError } = await supabase
+                .from('sakhi_clinic_leads')
+                .select('*')
+                .eq('id', id)
+                .eq('clinic_id', clinic_id)
+                .single();
+            
+            if (leadError?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Lead not found' }, HttpStatus.NOT_FOUND);
+            if (leadError) throw leadError;
+            
+            if (lead.status === 'Converted') {
+                throw new HttpException({ success: false, error: 'Lead is already converted' }, HttpStatus.BAD_REQUEST);
+            }
+
+            // 2. Strict Phone Validation
+            const phoneStr = String(lead.phone || '').trim();
+            const isValidPhone = /^\+?[1-9]\d{9,14}$/.test(phoneStr);
+            if (!isValidPhone) {
+                throw new HttpException({ success: false, error: 'Invalid phone number format on lead. Please fix lead mobile before converting.' }, HttpStatus.BAD_REQUEST);
+            }
+
+            // 3. Decrypt problem and prep data
+            const decryptedProblem = this.encryption.decrypt(lead.problem);
+            const uhid = await this.utils.generateUhid(supabase);
+            const rawPin = Math.floor(1000 + Math.random() * 9000).toString();
+            const pin_hash = await bcrypt.hash(rawPin, 10);
+            const registration_date = new Date().toISOString().slice(0, 10);
+
+            const patientPayload = this.utils.sanitizePayload({
+                uhid, 
+                name: lead.name, 
+                mobile: phoneStr,
+                marital_status: 'Unknown', // Avoid false assumption
+                gender: lead.gender || 'Unknown',
+                age: lead.age,
+                emergency_contact_name: lead.guardian_name,
+                registration_date,
+                status: 'ACTIVE',
+                pin_hash
+            });
+            
+            // 4. Execute atomic RPC
+            const { data: rpcResult, error: rpcError } = await supabase.rpc('convert_lead_to_patient', {
+                p_lead_id: id,
+                p_clinic_id: clinic_id,
+                p_patient_data: patientPayload,
+                p_clinical_note: decryptedProblem
+            });
+            
+            if (rpcError) {
+                if (rpcError.message?.includes('already exists')) {
+                    throw new HttpException({ success: false, error: 'Patient with this mobile already exists' }, HttpStatus.CONFLICT);
+                }
+                throw rpcError;
+            }
+
+            const patient_id = rpcResult.patient_id;
+
+            // 5. Emit Events
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_CREATED, new PatientEvent(
+                clinic_id, actor_id, patient_id, { action: 'create_patient_from_lead', lead_id: id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            await this.eventsQueue.add(DFO_EVENTS.LEAD_UPDATED, new LeadEvent(
+                clinic_id, actor_id, id, { action: 'convert_lead', status: 'Converted', patient_id: patient_id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, data: { patient_id, lead_id: id }, generatedPin: rawPin };
+
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/leads/${id}/convert`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

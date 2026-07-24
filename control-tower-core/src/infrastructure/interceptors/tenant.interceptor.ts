@@ -4,6 +4,8 @@ import {
   Injectable,
   NestInterceptor,
   Logger,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Observable } from 'rxjs';
@@ -16,7 +18,8 @@ export class TenantInterceptor implements NestInterceptor {
   private readonly jwtSecret: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
+    this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+    if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
@@ -41,9 +44,11 @@ export class TenantInterceptor implements NestInterceptor {
           is_clinic_admin: decoded.is_clinic_admin,
         };
       } catch (error) {
-        // Fail-soft: if token is expired or invalid, we don't throw an error here.
-        // The existing AuthGuards will handle throwing the 401.
-        this.logger.debug('Failed to verify JWT in TenantInterceptor. Proceeding without context.');
+        this.logger.error('Failed to verify JWT in TenantInterceptor.', error);
+        throw new HttpException(
+          { success: false, error: 'Unauthorized: Invalid or expired token' },
+          HttpStatus.UNAUTHORIZED,
+        );
       }
     }
 

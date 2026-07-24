@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Delete, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
@@ -673,6 +673,264 @@ export class PatientsController {
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`POST /api/patients/${id}/notes`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Put(':id/notes/:noteId')
+    @Roles('Admin', 'Doctor')
+    async updateNote(@Param('id') id: string, @Param('noteId') noteId: string, @Body() body: any) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const actor_id = TenantContext.getUserId();
+
+            // Fetch original note for compliance checks
+            const { data: originalNote, error: fetchError } = await supabase.from('sakhi_clinical_notes')
+                .select('doctor_id, created_at')
+                .eq('id', noteId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .single();
+            
+            if (fetchError || !originalNote) {
+                throw new HttpException({ success: false, error: 'Note not found' }, HttpStatus.NOT_FOUND);
+            }
+
+            // Auth Check
+            if (originalNote.doctor_id !== actor_id) {
+                throw new HttpException({ success: false, error: 'Unauthorized to edit this note' }, HttpStatus.FORBIDDEN);
+            }
+
+            // Time Limit Check (48 hours)
+            const hoursSinceCreation = (new Date().getTime() - new Date(originalNote.created_at).getTime()) / (1000 * 60 * 60);
+            if (hoursSinceCreation > 48) {
+                throw new HttpException({ success: false, error: 'Note is locked and cannot be edited after 48 hours' }, HttpStatus.FORBIDDEN);
+            }
+
+            const payload = this.utils.sanitizePayload({ subjective: body.subjective, objective: body.objective, assessment: body.assessment, plan: body.plan, updated_at: new Date().toISOString() });
+            
+            const { data, error } = await supabase.from('sakhi_clinical_notes')
+                .update(payload)
+                .eq('id', noteId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .select().single();
+            if (error) throw error;
+
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_NOTE_UPDATED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'update_structured_note', note_id: noteId }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`PUT /api/patients/${id}/notes/${noteId}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete(':id/notes/:noteId')
+    @Roles('Admin', 'Doctor')
+    async deleteNote(@Param('id') id: string, @Param('noteId') noteId: string) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const actor_id = TenantContext.getUserId();
+
+            // Fetch original note for auth check
+            const { data: originalNote, error: fetchError } = await supabase.from('sakhi_clinical_notes')
+                .select('doctor_id')
+                .eq('id', noteId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .single();
+            
+            if (fetchError || !originalNote) {
+                throw new HttpException({ success: false, error: 'Note not found' }, HttpStatus.NOT_FOUND);
+            }
+
+            // Auth Check
+            if (originalNote.doctor_id !== actor_id) {
+                throw new HttpException({ success: false, error: 'Unauthorized to delete this note' }, HttpStatus.FORBIDDEN);
+            }
+
+            // Soft delete
+            const { error } = await supabase.from('sakhi_clinical_notes')
+                .update({ status: 'DELETED', updated_at: new Date().toISOString() })
+                .eq('id', noteId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id);
+            if (error) throw error;
+
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_NOTE_DELETED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'delete_structured_note', note_id: noteId }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`DELETE /api/patients/${id}/notes/${noteId}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get(':id/treatments')
+    async getTreatments(@Param('id') id: string) {
+        if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            const { data, error } = await supabase.from('sakhi_clinic_treatments')
+                .select('*')
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            return { success: true, data };
+        } catch (error: any) {
+            this.logger.error(`GET /api/patients/${id}/treatments`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post(':id/treatments')
+    @Roles('Admin', 'Doctor')
+    async createTreatment(@Param('id') id: string, @Body() body: any) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            if (!body?.treatment_name) throw new HttpException({ success: false, error: 'treatment_name is required' }, HttpStatus.BAD_REQUEST);
+            
+            // Parent Validation
+            if (this.utils.isUuid(body.parent_treatment_id)) {
+                const { data: parent, error: parentError } = await supabase.from('sakhi_clinic_treatments')
+                    .select('id')
+                    .eq('id', body.parent_treatment_id)
+                    .eq('patient_id', id)
+                    .eq('clinic_id', clinic_id)
+                    .single();
+                
+                if (parentError || !parent) {
+                    throw new HttpException({ success: false, error: 'Invalid parent_treatment_id: Treatment not found or belongs to another patient' }, HttpStatus.BAD_REQUEST);
+                }
+            }
+
+            const payload = this.utils.sanitizePayload({
+                clinic_id,
+                patient_id: id,
+                doctor_id: this.utils.isUuid(body.doctor_id) ? body.doctor_id : null,
+                treatment_name: body.treatment_name,
+                description: body.description,
+                status: body.status || 'PLANNED',
+                cost: body.cost || null,
+                parent_treatment_id: this.utils.isUuid(body.parent_treatment_id) ? body.parent_treatment_id : null
+            });
+
+            const { data, error } = await supabase.from('sakhi_clinic_treatments').insert(payload).select().single();
+            if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.TREATMENT_CREATED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'create_treatment', treatment_id: data.id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/patients/${id}/treatments`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Put(':id/treatments/:treatmentId')
+    @Roles('Admin', 'Doctor')
+    async updateTreatment(@Param('id') id: string, @Param('treatmentId') treatmentId: string, @Body() body: any) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            // State Machine Validation
+            const { data: existing, error: existingError } = await supabase.from('sakhi_clinic_treatments')
+                .select('status')
+                .eq('id', treatmentId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .single();
+            
+            if (existingError || !existing) {
+                throw new HttpException({ success: false, error: 'Treatment not found' }, HttpStatus.NOT_FOUND);
+            }
+
+            if (existing.status === 'COMPLETED' && body.status && body.status !== 'COMPLETED') {
+                throw new HttpException({ success: false, error: 'Cannot change status of a completed treatment' }, HttpStatus.BAD_REQUEST);
+            }
+            if (existing.status === 'CANCELLED' && body.status && body.status !== 'CANCELLED') {
+                throw new HttpException({ success: false, error: 'Cannot change status of a cancelled treatment' }, HttpStatus.BAD_REQUEST);
+            }
+
+            const payload = this.utils.sanitizePayload({
+                treatment_name: body.treatment_name,
+                description: body.description,
+                status: body.status,
+                cost: body.cost,
+                updated_at: new Date().toISOString()
+            });
+
+            const { data, error } = await supabase.from('sakhi_clinic_treatments')
+                .update(payload)
+                .eq('id', treatmentId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id)
+                .select().single();
+            if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.TREATMENT_UPDATED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'update_treatment', treatment_id: treatmentId }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`PUT /api/patients/${id}/treatments/${treatmentId}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Delete(':id/treatments/:treatmentId')
+    @Roles('Admin', 'Doctor')
+    async deleteTreatment(@Param('id') id: string, @Param('treatmentId') treatmentId: string) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+
+        const supabase = this.supabaseService.getClient();
+        try {
+            // Soft delete
+            const { error } = await supabase.from('sakhi_clinic_treatments')
+                .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
+                .eq('id', treatmentId)
+                .eq('patient_id', id)
+                .eq('clinic_id', clinic_id);
+            if (error) throw error;
+
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.TREATMENT_DELETED, new PatientEvent(
+                clinic_id, actor_id, id, { action: 'delete_treatment', treatment_id: treatmentId }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true };
+        } catch (error: any) {
+            this.logger.error(`DELETE /api/patients/${id}/treatments/${treatmentId}`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

@@ -6,10 +6,15 @@ import { HealthcareExceptionFilter } from './infrastructure/filters/healthcare-e
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 
+import { NestExpressApplication } from '@nestjs/platform-express';
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
   });
+
+  // Trust Proxy for Rate Limiting behind load balancers
+  app.set('trust proxy', 1);
 
   // Security Hardening
   app.use(helmet());

@@ -8,7 +8,8 @@ export class SuperAdminGuard implements CanActivate {
     private readonly jwtSecret: string;
 
     constructor(private readonly configService: ConfigService) {
-        this.jwtSecret = this.configService.get<string>('JWT_SECRET') || 'fallback_secret_do_not_use_in_prod';
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+        if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
     }
 
     canActivate(context: ExecutionContext): boolean {

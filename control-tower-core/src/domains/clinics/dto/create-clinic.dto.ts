@@ -1,6 +1,10 @@
-import { IsString, IsEmail, IsNotEmpty, IsIn } from 'class-validator';
+import { IsString, IsEmail, IsNotEmpty, IsIn, IsUUID, IsOptional } from 'class-validator';
 
 export class CreateClinicDto {
+  @IsUUID()
+  @IsOptional()
+  request_id?: string;
+
   @IsString()
   @IsNotEmpty()
   clinic_name: string;

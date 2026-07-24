@@ -11,6 +11,11 @@ export const DFO_EVENTS = {
   PATIENT_UPDATED: 'patient.updated',
   PATIENT_DOCUMENT_UPLOADED: 'patient.document.uploaded',
   PATIENT_NOTE_CREATED: 'patient.note.created',
+  PATIENT_NOTE_UPDATED: 'patient.note.updated',
+  PATIENT_NOTE_DELETED: 'patient.note.deleted',
+  TREATMENT_CREATED: 'treatment.created',
+  TREATMENT_UPDATED: 'treatment.updated',
+  TREATMENT_DELETED: 'treatment.deleted',
   PATIENT_PIN_RESET: 'patient.pin.reset',
 
   // Appointments
