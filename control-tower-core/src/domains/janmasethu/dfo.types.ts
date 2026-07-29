@@ -78,7 +78,11 @@ export interface DFOConsultation {
 
 export interface DFOPrescription {
     id?: string;
-    consultation_id: string;
+    group_id?: string;
+    patient_id?: string;
+    clinic_id?: string;
+    doctor_id?: string;
+    consultation_id?: string;
     medication_name: string;
     dosage: string;
     frequency: string;

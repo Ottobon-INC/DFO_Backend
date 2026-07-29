@@ -248,6 +248,11 @@ export class AppointmentsController {
             const { data, error } = await supabase.from('sakhi_clinic_appointments').insert(payload).select().single();
             if (error) throw error;
 
+            if (doctor_id) {
+                // Increment slot count
+                await this.utils.incrementSlotBooking(supabase, doctor_id, appointment_date, start_time);
+            }
+
             const actor_id = TenantContext.getUserId();
             await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_CREATED, new AppointmentEvent(
                 clinic_id, actor_id, data.id, { action: 'create_appointment' }
@@ -395,11 +400,27 @@ export class AppointmentsController {
                 doctor_id: validatedDoctorId, notes: body.notes,
             });
 
+            const oldDoctor = appointment.doctor_id;
+            const oldDate = appointment.appointment_date;
+            const oldStartTime = appointment.start_time;
+            
+            const newDoctor = validatedDoctorId ?? oldDoctor;
+            const newDate = appointment_date;
+            const newStartTime = start_time;
+            
+            const timeOrDoctorChanged = (oldDoctor !== newDoctor) || (oldDate !== newDate) || (oldStartTime !== newStartTime);
+
             const { data, error } = await supabase.from('sakhi_clinic_appointments').update(allowed).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
             if (error) throw error;
+
+            if (timeOrDoctorChanged) {
+                if (oldDoctor) await this.utils.decrementSlotBooking(supabase, oldDoctor, oldDate, oldStartTime);
+                if (newDoctor) await this.utils.incrementSlotBooking(supabase, newDoctor, newDate, newStartTime);
+            }
+
             await this.utils.backfillPatientSnapshot(supabase, id);
 
             const actor_id = TenantContext.getUserId();
@@ -432,7 +453,7 @@ export class AppointmentsController {
             }
 
             const { data: appointment, error: appointmentError } = await supabase
-                .from('sakhi_clinic_appointments').select('status').eq('id', id).eq('clinic_id', clinic_id).single();
+                .from('sakhi_clinic_appointments').select('status, doctor_id, appointment_date, start_time').eq('id', id).eq('clinic_id', clinic_id).single();
             if (appointmentError?.code === 'PGRST116' || !appointment) {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
@@ -457,6 +478,16 @@ export class AppointmentsController {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
             if (error) throw error;
+
+            if (['Canceled', 'No Show'].includes(status) && !['Canceled', 'No Show'].includes(appointment.status)) {
+                if (appointment.doctor_id) {
+                    await this.utils.decrementSlotBooking(supabase, appointment.doctor_id, appointment.appointment_date, appointment.start_time);
+                }
+            } else if (!['Canceled', 'No Show'].includes(status) && ['Canceled', 'No Show'].includes(appointment.status)) {
+                if (appointment.doctor_id) {
+                    await this.utils.incrementSlotBooking(supabase, appointment.doctor_id, appointment.appointment_date, appointment.start_time);
+                }
+            }
 
             const actor_id = TenantContext.getUserId();
             await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_STATUS_CHANGED, new AppointmentEvent(

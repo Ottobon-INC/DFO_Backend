@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { SchedulesService } from '../services/schedules.service';
@@ -27,5 +27,16 @@ export class SchedulesController {
         const clinicId = TenantContext.getClinicId() || '';
         this.logger.log(`Saving schedules for doctor ${doctorId} in clinic ${clinicId}`);
         return this.schedulesService.saveSchedules(clinicId, doctorId, body.schedules);
+    }
+
+    @Get(':doctorId/slots')
+    async getDoctorSlots(
+        @Param('doctorId') doctorId: string,
+        @Query('date') date?: string
+    ) {
+        const clinicId = TenantContext.getClinicId() || '';
+        this.logger.log(`Fetching available slots for doctor ${doctorId} in clinic ${clinicId}`);
+        const slots = await this.schedulesService.getAvailableSlots(clinicId, doctorId, date);
+        return { success: true, data: slots };
     }
 }

@@ -13,7 +13,7 @@ export class SchedulesService {
         const supabase = this.supabaseService.getClient();
         
         const { data, error } = await supabase
-            .from('dfo_doctor_schedules')
+            .from('sakhi_clinic_doctor_schedules')
             .select('*')
             .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId)
@@ -29,12 +29,12 @@ export class SchedulesService {
         return data || [];
     }
 
-    async saveSchedules(clinicId: string, doctorId: string, schedules: any[]): Promise<any[]> {
+    async saveSchedules(clinicId: string, doctorId: string, schedules: any[], startDate?: string, endDate?: string): Promise<any[]> {
         const supabase = this.supabaseService.getClient();
 
-        // 1. Delete existing schedules for this doctor in this clinic
+        // 1. Delete existing schedules for this doctor in this clinic (this acts as a "last saved template")
         const { error: deleteError } = await supabase
-            .from('dfo_doctor_schedules')
+            .from('sakhi_clinic_doctor_schedules')
             .delete()
             .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId);
@@ -53,11 +53,12 @@ export class SchedulesService {
                 start_time: s.start_time,
                 end_time: s.end_time,
                 slot_duration_minutes: s.slot_duration_minutes || 15,
+                slot_capacity: s.slot_capacity || 1,
                 is_active: true
             }));
 
             const { data, error: insertError } = await supabase
-                .from('dfo_doctor_schedules')
+                .from('sakhi_clinic_doctor_schedules')
                 .insert(insertPayload)
                 .select();
 
@@ -67,7 +68,7 @@ export class SchedulesService {
             }
             
             // 3. Trigger async generation of availability slots
-            this.generateAvailabilitySlots(clinicId, doctorId, data).catch(err => {
+            this.generateAvailabilitySlots(clinicId, doctorId, data, startDate, endDate).catch(err => {
                 this.logger.error(`Failed to generate async slots: ${err.message}`);
             });
 
@@ -78,21 +79,47 @@ export class SchedulesService {
     }
 
     /**
-     * Automatically generates individual 15-minute slots for the next 30 days based on the new rules.
+     * Automatically generates individual slots for a specific date range (or 30 days if not provided).
      */
-    async generateAvailabilitySlots(clinicId: string, doctorId: string, schedules: any[]) {
+    async generateAvailabilitySlots(clinicId: string, doctorId: string, schedules: any[], startDate?: string, endDate?: string) {
         if (!schedules || schedules.length === 0) return;
         
         const supabase = this.supabaseService.getClient();
-        this.logger.log(`Generating slots for doctor ${doctorId} for next 30 days...`);
+        
+        let start = new Date();
+        start.setHours(0,0,0,0);
+        let end = new Date(start);
+        end.setDate(start.getDate() + 29); // next 30 days default
+
+        if (startDate && endDate) {
+            start = new Date(startDate);
+            end = new Date(endDate);
+            this.logger.log(`Generating slots for doctor ${doctorId} from ${startDate} to ${endDate}...`);
+        } else {
+            this.logger.log(`Generating slots for doctor ${doctorId} for next 30 days...`);
+        }
+
+        const dateStrStart = start.toISOString().split('T')[0];
+        const dateStrEnd = end.toISOString().split('T')[0];
+
+        // First, delete any unbooked slots in the target range to prevent orphaned slots
+        const { error: deleteSlotsError } = await supabase
+            .from('sakhi_clinic_availability_slots')
+            .delete()
+            .eq('clinic_id', clinicId)
+            .eq('doctor_id', doctorId)
+            .gte('slot_date', dateStrStart)
+            .lte('slot_date', dateStrEnd)
+            .eq('booked_count', 0);
+
+        if (deleteSlotsError) {
+            this.logger.error(`Failed to delete unbooked slots: ${deleteSlotsError.message}`);
+        }
 
         const slotsToInsert: any[] = [];
-        const today = new Date();
         
-        // Loop through the next 30 days
-        for (let i = 0; i < 30; i++) {
-            const currentDate = new Date(today);
-            currentDate.setDate(today.getDate() + i);
+        // Loop through the dates
+        for (let currentDate = new Date(start); currentDate <= end; currentDate.setDate(currentDate.getDate() + 1)) {
             const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
             const dateStr = currentDate.toISOString().split('T')[0];
 
@@ -122,11 +149,13 @@ export class SchedulesService {
 
                     // Push slot payload
                     slotsToInsert.push({
+                        clinic_id: clinicId,
                         doctor_id: doctorId,
                         slot_date: dateStr,
                         start_time: slotStartTimeStr,
                         end_time: slotEndTimeStr,
-                        is_booked: false
+                        capacity: schedule.slot_capacity || 1,
+                        booked_count: 0
                     });
                 }
             }
@@ -136,7 +165,7 @@ export class SchedulesService {
             // Upsert or insert slots
             // Assuming (doctor_id, slot_date, start_time) is unique
             const { error } = await supabase
-                .from('dfo_availability_slots')
+                .from('sakhi_clinic_availability_slots')
                 .upsert(slotsToInsert, { onConflict: 'doctor_id, slot_date, start_time', ignoreDuplicates: true });
 
             if (error) {
@@ -145,5 +174,33 @@ export class SchedulesService {
                 this.logger.log(`Successfully generated ${slotsToInsert.length} slots for doctor ${doctorId}`);
             }
         }
+    }
+
+    async getAvailableSlots(clinicId: string, doctorId: string, date?: string): Promise<any[]> {
+        const supabase = this.supabaseService.getClient();
+        let query = supabase
+            .from('sakhi_clinic_availability_slots')
+            .select('*')
+            .eq('clinic_id', clinicId)
+            .eq('doctor_id', doctorId)
+            .order('slot_date', { ascending: true })
+            .order('start_time', { ascending: true });
+
+        if (date) {
+            query = query.eq('slot_date', date);
+        } else {
+            const today = new Date().toISOString().split('T')[0];
+            query = query.gte('slot_date', today);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            this.logger.error(`Failed to fetch availability slots: ${error.message}`);
+            throw new HttpException('Failed to fetch availability slots', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+
+        // Only return slots that have capacity remaining
+        return (data || []).filter(slot => slot.booked_count < slot.capacity);
     }
 }

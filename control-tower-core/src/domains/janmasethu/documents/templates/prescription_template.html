@@ -22,11 +22,12 @@
 <div class="prescription-container">
     <div class="header">
         <div>
-            <strong style="color:#0056b3">JANMASETHU</strong><br>
+            <strong style="color:#0056b3">{{clinic_name}}</strong><br>
             <small>Digital Health Platform</small>
         </div>
-        <div>
-            <strong style="color:#e91e63">Sakhi</strong>
+        <div style="text-align: right;">
+            <strong style="color:#e91e63">{{doctor_name}}</strong><br>
+            <small style="color:#6c757d;">{{doctor_qualifications}}</small>
         </div>
     </div>
 
@@ -46,6 +47,7 @@
         <thead>
             <tr>
                 <th>Medicine Name & Dosage</th>
+                <th>Quantity</th>
                 <th>Frequency</th>
                 <th>Duration</th>
                 <th>Instructions</th>
@@ -55,6 +57,7 @@
             {{#each medications}}
             <tr>
                 <td><strong>{{this.name}}</strong><br>{{this.dosage}}</td>
+                <td>{{this.quantity}}</td>
                 <td>{{this.frequency}}</td>
                 <td>{{this.duration}}</td>
                 <td>{{this.instructions}}</td>

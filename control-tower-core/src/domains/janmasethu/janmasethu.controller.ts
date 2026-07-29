@@ -33,6 +33,7 @@ import {
 
 import { JanmasethuResponseInterceptor } from './utils/response.interceptor';
 import { ThreadStatus, OwnershipType } from '../../types';
+import { TenantContext } from '../../infrastructure/context/tenant.context';
 
 @Controller('api/janmasethu')
 @UseGuards(JwtAuthGuard)
@@ -135,16 +136,23 @@ export class JanmasethuController {
     @Post('consultations/prescription')
     async addPrescription(@Body() dto: AddPrescriptionDto, @Request() req: any) {
         const ctx = this.getUserContext(req);
+        const clinic_id = TenantContext.getClinicId();
+
         // Ensure consultation_id exists, so the db insert succeeds and groups these meds
         if (!dto.consultation_id) {
             dto.consultation_id = randomUUID(); // Group multi-meds under same UUID
         }
 
+        const group_id = dto.consultation_id;
+        const patient_id = dto.patient_id;
         const resIds: string[] = [];
 
         for (const med of dto.medications) {
             const prescriptionPayload = {
-                consultation_id: dto.consultation_id,
+                group_id,
+                patient_id,
+                clinic_id,
+                doctor_id: ctx.id,
                 medication_name: med.medication_name,
                 dosage: med.dosage,
                 frequency: `${med.frequency} times a day`,
@@ -157,20 +165,17 @@ export class JanmasethuController {
             resIds.push(res.id!);
         }
 
-        await this.auditService.logClinicalUpdate(ctx.id, 'PRESCRIPTION_ADDED', dto.consultation_id, { medications_count: dto.medications.length });
+        await this.auditService.logClinicalUpdate(ctx.id, 'PRESCRIPTION_ADDED', group_id, { medications_count: dto.medications.length });
 
         // AUTO-TRIGGER: Queue document generation asynchronously (non-blocking)
-        const consultation = await this.repository.findThreadById(dto.consultation_id).catch(() => null);
-        const patientId: string = (consultation?.metadata?.patient_id as string) || dto.patient_id;
-
         this.documentService.queuePrescriptionGeneration({
             prescription_id: resIds[0], // the trigger needs one id, but the generator will fetch all by consultation
-            consultation_id: dto.consultation_id,
-            patient_id: patientId,
+            consultation_id: group_id,
+            patient_id: patient_id,
+            clinic_id: clinic_id || '',
             doctor_id: ctx.id,
             generated_by: ctx.id
         }).catch(e => this.logger.warn(`Document auto-queue failed (non-critical): ${e.message}`));
-
 
         return { success: true, count: resIds.length, document_generation: 'queued' };
     }

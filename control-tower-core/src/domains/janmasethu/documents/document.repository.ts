@@ -91,7 +91,7 @@ export class DocumentRepository {
             clinic_id: TenantContext.getClinicId(), // Pass the tenant context
             name: dto.file_name,
             file_path: dto.file_path,
-            mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            mime_type: 'application/pdf',
             created_at: new Date()
         };
 
