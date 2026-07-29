@@ -183,18 +183,24 @@ export class SuperAdminController {
     async deleteClinic(@Param('id') id: string) {
         const supabase = this.supabaseService.getClient();
         try {
-            // 1. Delete all users belonging to this clinic
+            // 1. Soft delete all users belonging to this clinic
             const { error: usersError } = await supabase
                 .from('sakhi_clinic_users')
-                .delete()
+                .update({ is_active: false })
                 .eq('clinic_id', id);
             
             if (usersError) throw usersError;
 
-            // 2. Delete the clinic
+            // Also delete their clinic_staff assignments
+            await supabase
+                .from('clinic_staff')
+                .delete()
+                .eq('clinic_id', id);
+
+            // 2. Soft delete the clinic
             const { error: clinicError } = await supabase
                 .from('clinics')
-                .delete()
+                .update({ is_active: false })
                 .eq('id', id);
 
             if (clinicError) throw clinicError;
