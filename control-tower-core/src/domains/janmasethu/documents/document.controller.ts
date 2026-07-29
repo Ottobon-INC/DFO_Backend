@@ -9,6 +9,7 @@ import { UploadReportDto } from '../dto/dfo.dto';
 import { JanmasethuRbacService } from '../janmasethu.rbac';
 import { JanmasethuAuditService } from '../janmasethu.audit.service';
 import { JANMASETHU_DOMAIN, JanmasethuUserRole, JanmasethuUserContext } from '../janmasethu.types';
+import { TenantContext } from '../../../infrastructure/context/tenant.context';
 
 @Controller('janmasethu/documents')
 export class DocumentController {
@@ -63,6 +64,7 @@ export class DocumentController {
         try {
             const result = await this.documentService.queuePrescriptionGeneration({
                 ...body,
+                clinic_id: TenantContext.getClinicId() || '',
                 generated_by: ctx.id,
             });
 

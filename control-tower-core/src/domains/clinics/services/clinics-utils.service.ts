@@ -91,7 +91,25 @@ export class ClinicsUtilsService {
         startTime: string,
         endTime: string,
         excludeAppointmentId?: string
-    ): Promise<{ isAvailable: boolean; conflictClinicId?: string }> {
+    ): Promise<{ isAvailable: boolean; conflictClinicId?: string; reason?: string }> {
+        // 1. Check if the doctor has an open slot at this time
+        const { data: slots, error: slotsError } = await supabase
+            .from('sakhi_clinic_availability_slots')
+            .select('*')
+            .eq('doctor_id', doctorId)
+            .eq('slot_date', appointmentDate)
+            .lte('start_time', startTime);
+        
+        if (slotsError) throw slotsError;
+
+        // Find a slot that fully encompasses the appointment time
+        const matchingSlot = slots?.find(s => s.start_time <= startTime && s.end_time >= endTime);
+
+        if (!matchingSlot) {
+            return { isAvailable: false, reason: 'Doctor is not scheduled to work at this specific time.' };
+        }
+
+        // 2. Check overlapping appointments to ensure we haven't exceeded capacity
         let query = supabase
             .from('sakhi_clinic_appointments')
             .select('id, clinic_id, start_time, end_time')
@@ -104,24 +122,59 @@ export class ClinicsUtilsService {
         }
 
         const { data: existingAppts, error } = await query;
-        
-        if (error) {
-            throw error;
-        }
+        if (error) throw error;
 
-        if (!existingAppts || existingAppts.length === 0) {
-            return { isAvailable: true };
-        }
+        if (existingAppts && existingAppts.length > 0) {
+            let overlappingCount = 0;
+            let conflictClinicId = null;
+            
+            for (const appt of existingAppts) {
+                // If the appointment overlaps exactly with our requested time
+                if (startTime < appt.end_time && endTime > appt.start_time) {
+                    overlappingCount++;
+                    conflictClinicId = appt.clinic_id;
+                }
+            }
 
-        // Check for time overlap
-        // Two intervals [A_start, A_end] and [B_start, B_end] overlap if:
-        // A_start < B_end AND A_end > B_start
-        for (const appt of existingAppts) {
-            if (startTime < appt.end_time && endTime > appt.start_time) {
-                return { isAvailable: false, conflictClinicId: appt.clinic_id };
+            if (overlappingCount >= matchingSlot.capacity) {
+                return { isAvailable: false, conflictClinicId, reason: 'Maximum patient capacity reached for this time slot.' };
             }
         }
 
         return { isAvailable: true };
+    }
+
+    async incrementSlotBooking(supabase: SupabaseClient, doctorId: string, date: string, startTime: string): Promise<void> {
+        const { data: slots } = await supabase
+            .from('sakhi_clinic_availability_slots')
+            .select('id, booked_count, start_time, end_time')
+            .eq('doctor_id', doctorId)
+            .eq('slot_date', date)
+            .lte('start_time', startTime);
+            
+        const matchingSlot = slots?.find(s => s.start_time <= startTime && s.end_time > startTime);
+        if (matchingSlot) {
+            await supabase
+                .from('sakhi_clinic_availability_slots')
+                .update({ booked_count: matchingSlot.booked_count + 1 })
+                .eq('id', matchingSlot.id);
+        }
+    }
+
+    async decrementSlotBooking(supabase: SupabaseClient, doctorId: string, date: string, startTime: string): Promise<void> {
+        const { data: slots } = await supabase
+            .from('sakhi_clinic_availability_slots')
+            .select('id, booked_count, start_time, end_time')
+            .eq('doctor_id', doctorId)
+            .eq('slot_date', date)
+            .lte('start_time', startTime);
+            
+        const matchingSlot = slots?.find(s => s.start_time <= startTime && s.end_time > startTime);
+        if (matchingSlot && matchingSlot.booked_count > 0) {
+            await supabase
+                .from('sakhi_clinic_availability_slots')
+                .update({ booked_count: matchingSlot.booked_count - 1 })
+                .eq('id', matchingSlot.id);
+        }
     }
 }

@@ -525,7 +525,9 @@ export class JanmasethuRepository {
     }
 
     async addPrescription(dto: DFOPrescription): Promise<DFOPrescription> {
-        const { data, error } = await this.supabase.from('dfo_prescriptions').insert([dto]).select().single();
+        // Strip out consultation_id if present because sakhi_clinic_prescriptions uses group_id
+        const { consultation_id, ...insertPayload } = dto;
+        const { data, error } = await this.supabase.from('sakhi_clinic_prescriptions').insert([insertPayload]).select().single();
         if (error) throw error;
         return data as DFOPrescription;
     }
@@ -537,7 +539,7 @@ export class JanmasethuRepository {
     }
 
     async findPatientHistory(patientId: string): Promise<any> {
-        const { data: consultations } = await this.supabase.from('dfo_consultations').select('*, dfo_prescriptions(*)').eq('patient_id', patientId);
+        const { data: consultations } = await this.supabase.from('dfo_consultations').select('*').eq('patient_id', patientId);
         const { data: reports } = await this.supabase.from('dfo_medical_reports').select('*').eq('patient_id', patientId);
         return { consultations, reports };
     }

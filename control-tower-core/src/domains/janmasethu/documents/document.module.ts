@@ -14,9 +14,12 @@ import { JanmasethuRepository } from '../janmasethu.repository';
 import { TemplateService } from './template.service';
 import { PdfService } from './pdf.service';
 
+import { AwsModule } from '../../../infrastructure/aws/aws.module';
+
 @Module({
     imports: [
         BullModule.registerQueue({ name: 'document_generation_queue' }),
+        AwsModule,
     ],
     providers: [
         DocumentService,

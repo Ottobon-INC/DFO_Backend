@@ -47,6 +47,7 @@ export interface GenerateDocumentJobPayload {
     prescription_id: string;
     consultation_id: string;
     patient_id: string;
+    clinic_id: string;
     doctor_id: string;
     type: DocumentType;
     generated_by: string;

@@ -67,6 +67,32 @@ export class S3Service {
     }
 
     /**
+     * Uploads a file buffer directly to S3.
+     * 
+     * @param path The full S3 object key (path).
+     * @param fileBuffer The file content as a Buffer.
+     * @param mimeType The MIME type of the file.
+     * @returns A promise that resolves to the size of the uploaded file.
+     */
+    async uploadFile(path: string, fileBuffer: Buffer, mimeType: string): Promise<number> {
+        const command = new PutObjectCommand({
+            Bucket: this.bucketName,
+            Key: path,
+            Body: fileBuffer,
+            ContentType: mimeType,
+        });
+
+        try {
+            await this.s3Client.send(command);
+            this.logger.log(`Successfully uploaded file to S3: ${path}`);
+            return fileBuffer.length;
+        } catch (error) {
+            this.logger.error(`Failed to upload file to S3 at path ${path}:`, error);
+            throw new Error('Could not upload file to S3.');
+        }
+    }
+
+    /**
      * Generates a presigned URL that allows a client to download a file from S3.
      * The URL will be valid for the specified duration (default 1 hour).
      * 
@@ -84,7 +110,8 @@ export class S3Service {
         if (downloadFilename) {
             // Sanitize filename to prevent HTTP header injection
             const safeName = downloadFilename.replace(/[^a-zA-Z0-9.\-_ ]/g, '_');
-            commandParams.ResponseContentDisposition = `attachment; filename="${safeName}"`;
+            // Use 'inline' instead of 'attachment' so the frontend can preview PDFs in iframes
+            commandParams.ResponseContentDisposition = `inline; filename="${safeName}"`;
         }
 
         const command = new GetObjectCommand(commandParams);
