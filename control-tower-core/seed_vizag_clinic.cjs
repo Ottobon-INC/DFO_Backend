@@ -1,6 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
 const path = require('path');
+const bcrypt = require('bcrypt');
 
 // Load env from dfo-backend
 const envPath = 'c:/Users/adrad/OneDrive/Desktop/dfo-backend/control-tower-core/.env';
@@ -123,30 +124,33 @@ async function run() {
     console.log('\n4. Checking for doctors at this clinic...');
     const { data: doctors } = await supabase
         .from('sakhi_clinic_users')
-        .select('id, full_name')
+        .select('id, first_name, last_name')
         .eq('clinic_id', clinicId)
-        .eq('is_active', true);
+        .eq('role', 'doctor');
 
     if (doctors && doctors.length > 0) {
-        console.log('Doctors already exist:', doctors.map(d => d.full_name));
+        console.log('Doctors already exist:', doctors.map(d => `${d.first_name} ${d.last_name}`));
     } else {
+        const hash = await bcrypt.hash('password123', 10);
         const { data: newDoc, error: docErr } = await supabase
             .from('sakhi_clinic_users')
             .insert([{
                 clinic_id: clinicId,
-                full_name: 'Dr. Priya Sharma',
+                first_name: 'Dr. Priya',
+                last_name: 'Sharma',
                 email: 'priya.sharma@janmasethu.com',
-                role: 'DOCTOR',
-                speciality: 'Fertility Specialist & IVF Expert',
+                password_hash: hash,
+                role: 'Doctor',
+                specialization: 'Fertility Specialist & IVF Expert',
                 designation: 'Senior Fertility Consultant',
-                is_active: true
+                is_available: true
             }])
             .select();
 
         if (docErr) {
             console.error('Error creating doctor:', docErr.message);
         } else {
-            console.log('Created doctor:', newDoc[0].full_name);
+            console.log('Created doctor:', `${newDoc[0].first_name} ${newDoc[0].last_name}`);
         }
     }
 

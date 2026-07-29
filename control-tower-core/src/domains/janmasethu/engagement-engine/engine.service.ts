@@ -35,6 +35,9 @@ export class EngagementEngineService {
             case 'APPOINTMENT_BOOKED':
                 await this.handleApptBooked(payload);
                 break;
+            case 'APPOINTMENT_COMPLETED':
+                await this.handleApptCompleted(payload);
+                break;
             case 'APPOINTMENT_MISSED':
                 await this.handleApptMissed(payload);
                 break;
@@ -141,21 +144,35 @@ export class EngagementEngineService {
     /**
      * APPOINTMENT AUTOMATIONS
      */
-    private async handleApptBooked(payload: { appointmentId: string, patient_id: string, reminderTime: Date }) {
-        this.logger.log(`Setting up reminder for appointment ${payload.appointmentId}`);
+    private async handleApptBooked(payload: { appointmentId: string, patient_id: string, reminderTime: Date, reminderTime24?: Date }) {
+        this.logger.log(`Setting up reminders for appointment ${payload.appointmentId}`);
 
         // 1. Initial Confirmation
         await this.triggerProactiveMessage(payload.patient_id, 'Your appointment has been confirmed! Looking forward to seeing you. 🏥');
 
-        // 2. Schedule Reminder Job (Using BullMQ delay)
-        const delay = payload.reminderTime.getTime() - Date.now();
-        if (delay > 0) {
+        // 2. Schedule 24-Hour Reminder Job (Using BullMQ delay)
+        if (payload.reminderTime24) {
+            const delay24 = payload.reminderTime24.getTime() - Date.now();
+            if (delay24 > 0) {
+                await this.engagementQueue.add('APPT_REMIND', {
+                    patient_id: payload.patient_id,
+                    content: `Friendly Care Reminder: Your appointment is tomorrow. See you then! 🏥`
+                }, {
+                    delay: delay24,
+                    jobId: `appt_remind_24h_${payload.appointmentId}`
+                });
+            }
+        }
+
+        // 3. Schedule 2-Hour Reminder Job (Using BullMQ delay)
+        const delay2h = payload.reminderTime.getTime() - Date.now();
+        if (delay2h > 0) {
             await this.engagementQueue.add('APPT_REMIND', {
                 patient_id: payload.patient_id,
                 content: `Friendly Care Reminder: Your appointment is in 2 hours. See you soon! 😊`
             }, {
-                delay,
-                jobId: `appt_remind_${payload.appointmentId}`
+                delay: delay2h,
+                jobId: `appt_remind_2h_${payload.appointmentId}`
             });
         }
     }
@@ -165,9 +182,12 @@ export class EngagementEngineService {
     }
 
     private async handleApptCancelled(payload: { appointmentId: string }) {
-        // Remove pending reminder job
-        const job = await this.engagementQueue.getJob(`appt_remind_${payload.appointmentId}`);
-        if (job) await job.remove();
+        // Remove both pending reminder jobs
+        const job24 = await this.engagementQueue.getJob(`appt_remind_24h_${payload.appointmentId}`);
+        if (job24) await job24.remove();
+
+        const job2h = await this.engagementQueue.getJob(`appt_remind_2h_${payload.appointmentId}`);
+        if (job2h) await job2h.remove();
     }
 
     private async handleDoctorCancelled(payload: { patient_id: string, suggestedDate?: Date, reason: string }) {
@@ -181,5 +201,22 @@ export class EngagementEngineService {
         }
 
         await this.triggerProactiveMessage(payload.patient_id, content);
+    }
+
+    private async handleApptCompleted(payload: { appointmentId: string }) {
+        this.logger.log(`Handling Appointment Completed for ${payload.appointmentId}`);
+
+        // 1. Fetch appointment details to get patient_id
+        const appt = await this.repository.findAppointmentById(payload.appointmentId);
+        if (!appt) return;
+
+        // 2. Immediate Follow-up / Guidance Nudge
+        await this.triggerProactiveMessage(appt.patient_id, 'Thank you for your consultation today! 🏥 If your doctor recommended a follow-up scan or another appointment, would you like to schedule it now? Reply with *YES* to find available slots. 😊');
+
+        // 3. Schedule a feedback survey after 24 hours
+        await this.engagementQueue.add('FOLLOW_UP_MSG', {
+            patient_id: appt.patient_id,
+            template: 'post_consultation_feedback'
+        }, { delay: 24 * 60 * 60 * 1000 });
     }
 }

@@ -155,9 +155,45 @@ export class JanmasethuRepository {
         let query = this.orgSupabase
             .from('sakhi_conversations_new')
             .select('*');
-        
+
         if (thread && thread.user_id) {
-            query = query.eq('user_id', thread.user_id);
+            const rawUserId = thread.user_id;
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUserId);
+
+            if (isUuid) {
+                // Already a UUID — query directly
+                query = query.eq('user_id', rawUserId);
+            } else {
+                // It's a phone number — normalize by stripping leading +91 or 91 to get 10-digit
+                let normalizedPhone = rawUserId.replace(/^\+91/, '').replace(/^91/, '');
+                // Also support full number with country code (10+ digits starting with 91)
+                const phoneVariants = Array.from(new Set([
+                    rawUserId,            // original (e.g. "+917392123669")
+                    rawUserId.replace(/^\+/, ''), // without + (e.g. "917392123669")
+                    normalizedPhone,       // 10-digit (e.g. "7392123669")
+                ]));
+
+                // Resolve via sakhi_users.phone_number -> sakhi_users.user_id
+                let resolvedUuid: string | null = null;
+                for (const phoneVariant of phoneVariants) {
+                    const { data: userRow } = await this.orgSupabase
+                        .from('sakhi_users')
+                        .select('user_id')
+                        .eq('phone_number', phoneVariant)
+                        .maybeSingle();
+                    if (userRow?.user_id) {
+                        resolvedUuid = userRow.user_id;
+                        break;
+                    }
+                }
+
+                if (resolvedUuid) {
+                    query = query.eq('user_id', resolvedUuid);
+                } else {
+                    // Final fallback: try chat_id = threadId
+                    query = query.eq('chat_id', threadId);
+                }
+            }
         } else {
             query = query.eq('chat_id', threadId);
         }
@@ -174,7 +210,33 @@ export class JanmasethuRepository {
             .select('*');
 
         if (thread && thread.user_id) {
-            query = query.eq('user_id', thread.user_id);
+            const rawUserId = thread.user_id;
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUserId);
+            if (isUuid) {
+                query = query.eq('user_id', rawUserId);
+            } else {
+                let normalizedPhone = rawUserId.replace(/^\+91/, '').replace(/^91/, '');
+                const phoneVariants = Array.from(new Set([rawUserId, rawUserId.replace(/^\+/, ''), normalizedPhone]));
+
+                let resolvedUuid: string | null = null;
+                for (const phoneVariant of phoneVariants) {
+                    const { data: userRow } = await this.orgSupabase
+                        .from('sakhi_users')
+                        .select('user_id')
+                        .eq('phone_number', phoneVariant)
+                        .maybeSingle();
+                    if (userRow?.user_id) {
+                        resolvedUuid = userRow.user_id;
+                        break;
+                    }
+                }
+
+                if (resolvedUuid) {
+                    query = query.eq('user_id', resolvedUuid);
+                } else {
+                    query = query.eq('chat_id', threadId);
+                }
+            }
         } else {
             query = query.eq('chat_id', threadId);
         }

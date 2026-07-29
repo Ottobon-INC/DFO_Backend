@@ -34,7 +34,7 @@ import {
 import { JanmasethuResponseInterceptor } from './utils/response.interceptor';
 import { ThreadStatus, OwnershipType } from '../../types';
 
-@Controller('janmasethu')
+@Controller('api/janmasethu')
 @UseGuards(JwtAuthGuard)
 @UseInterceptors(JanmasethuResponseInterceptor)
 export class JanmasethuController {

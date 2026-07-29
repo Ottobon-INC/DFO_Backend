@@ -1,0 +1,67 @@
+Daily Work Report
+Date: July 27, 2026
+Name: A. Divya
+What I Did Today
+Today, I focused on enabling backend-only testing capabilities for the post-consultation Google Review and feedback workflow, solving critical database connection routing issues caused by mobile hotspots, updating configuration documentation, and pushing our stable codebases to remote repositories.
+I began by implementing a backend-only test endpoint (POST /api/testing/trigger-review) in the core hospital backend to trigger patient review flows without needing the DFO frontend dashboard. To support this, I updated the database schema with a review_sent column to prevent duplicate feedback invitations unless forced. I then addressed a critical startup crash (socket.gaierror) where the backend was failing to connect to Supabase over a mobile hotspot due to IPv6 routing limitations. I resolved this by migrating both the test_backend and dfo-backend connection strings to use Supabase's IPv4 transaction poolers. Finally, I documented the 5 custom review questions inside our integration guides and successfully pushed the codebase updates to our remote repositories under new feature branches.
+Work Completed
+Backend-Only Review Trigger: Created a new endpoint POST /api/testing/trigger-review that fetches an appointment, verifies its completion, and runs the production feedback welcome workflow.
+Duplicate Trigger Prevention: Added a review_sent column to the automation_appointment table, ensuring users do not receive duplicate questionnaires unless a force=true flag is passed.
+Database Startup Fix (IPv6 to IPv4 Pooler): Diagnosed getaddrinfo connection failures on mobile hotspot and reconfigured the .env settings to route through Supabase's IPv4 poolers (aws-0-ap-southeast-1.pooler.supabase.com:6543).
+Custom Questions Documented: Integrated your 5 custom review questions (overall experience, doctor satisfaction, staff behavior, cleanliness, and suggestions) directly into the GBP guide and onboarding manuals.
+Codebase Repository Push: Staged, committed, and pushed the latest codebase states from all three backend folders to their respective repositories on Ottobon-INC and your personal account (adradivya001).
+Task 1: Backend-Only Trigger & Duplicate Prevention
+Task Objective: Enable end-to-end testing of the WhatsApp Google Review workflow without depending on the unready DFO frontend dashboard.
+Task Acceptance Criteria Status
+Acceptance Criteria
+Status
+Create POST /api/testing/trigger-review endpoint
+✅ Met
+Validate appointment status is COMPLETED
+✅ Met
+Reuse production trigger service without duplicate code
+✅ Met
+Add duplicate checks using a new review_sent column
+✅ Met
+Implement force=true override to bypass duplicate check
+✅ Met
+Add detailed step-by-step progress logging
+✅ Met
+Key Outcomes
+Decoupled Testing: Developers can now immediately trigger post-consultation feedback on the Sakhi bot simulator using simple curl commands.
+Strict Validation: Attempts to trigger reviews for invalid, non-existent, or incomplete appointments are blocked with clear validation codes (404 and 400).
+Database Safety: Prevented spamming patients with multiple welcome flows by storing the review_sent flag directly in the database.
+Task 2: Hotspot Network & DNS Connection Fix
+Task Objective: Resolve the local database connection crashes (getaddrinfo failed) occurring when starting the backend services over a mobile hotspot connection.
+Task Acceptance Criteria Status
+Acceptance Criteria
+Status
+Diagnose database hostname lookup failures
+✅ Met
+Bypass IPv6 connection limits over mobile hotspot
+✅ Met
+Configure IPv4 pooled connections for core backend
+✅ Met
+Configure IPv4 pooled connections for DFO backend
+✅ Met
+Verify successful migrations and server startup
+✅ Met
+Key Outcomes
+Hotspot Compatibility: Replaced direct database hosts with region-specific, IPv4-compatible Supabase connection poolers (aws-0-ap-southeast-1.pooler.supabase.com:6543).
+Correct Project Routing: Correctly mapped database usernames (e.g. postgres.fsidwhqotpclwrlwarml and postgres.kaaxkycrhkefylynkupy) to ensure both the test and DFO backends connect to their respective environments.
+Service Port Reference
+Service
+Port
+Technology / Repository
+test_backend (Core)
+8080
+FastAPI (Python) — Ottobon-INC/Hospital_Backend
+Whatsapp_backend (Sakhi)
+8000
+FastAPI (Python) — Ottobon-INC/Whatsapp_backend
+test_ui (Web UI)
+3001
+Node.js (Express) — Web Simulator UI
+test_bot (Middleware)
+3000
+Node.js — Ottobon-INC/Hospital_middleware

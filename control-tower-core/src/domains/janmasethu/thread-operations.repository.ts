@@ -434,11 +434,39 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             return [];
         }
 
-        const { data, error } = await this.orgSupabase
+        let query = this.orgSupabase
             .from('sakhi_conversations_new')
-            .select('*')
-            .eq('user_id', thread.user_id)
-            .order('created_at', { ascending: true });
+            .select('*');
+
+        const rawUserId = thread.user_id;
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUserId);
+        if (isUuid) {
+            query = query.eq('user_id', rawUserId);
+        } else {
+            let normalizedPhone = rawUserId.replace(/^\+91/, '').replace(/^91/, '');
+            const phoneVariants = Array.from(new Set([rawUserId, rawUserId.replace(/^\+/, ''), normalizedPhone]));
+
+            let resolvedUuid: string | null = null;
+            for (const phoneVariant of phoneVariants) {
+                const { data: userRow } = await this.orgSupabase
+                    .from('sakhi_users')
+                    .select('user_id')
+                    .eq('phone_number', phoneVariant)
+                    .maybeSingle();
+                if (userRow?.user_id) {
+                    resolvedUuid = userRow.user_id;
+                    break;
+                }
+            }
+
+            if (resolvedUuid) {
+                query = query.eq('user_id', resolvedUuid);
+            } else {
+                query = query.eq('chat_id', threadId);
+            }
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: true });
             
         if (error) throw error;
 
