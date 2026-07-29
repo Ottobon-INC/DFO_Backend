@@ -316,10 +316,16 @@ export class UsersController {
                 throw new HttpException({ success: false, error: 'Cannot remove a Clinic Admin' }, HttpStatus.FORBIDDEN);
             }
 
-            // Delete the user from sakhi_clinic_users (DB will cascade delete from clinic_staff)
+            // Also explicitly delete from clinic_staff since a soft delete won't cascade
+            await supabase
+                .from('clinic_staff')
+                .delete()
+                .eq('user_id', id);
+
+            // Soft delete the user from sakhi_clinic_users
             const { error } = await supabase
                 .from('sakhi_clinic_users')
-                .delete()
+                .update({ is_active: false })
                 .eq('id', id);
 
             if (error) throw error;

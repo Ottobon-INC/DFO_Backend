@@ -46,6 +46,10 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
+            if (user.is_active === false) {
+                throw new HttpException({ success: false, error: 'Account is deactivated' }, HttpStatus.UNAUTHORIZED);
+            }
+
             if (!user.password_hash) {
                 throw new HttpException({ success: false, error: 'User has no password set. Please contact admin.' }, HttpStatus.UNAUTHORIZED);
             }
@@ -63,20 +67,11 @@ export class AuthController {
                 }
             }
 
-            // 3. Crypto Verification & Transparent Upgrade
+            // 3. Crypto Verification
             let isMatch = false;
-            let needsBcryptUpgrade = false;
 
             try {
-                if (user.password_hash.startsWith('sha1$') || (!user.password_hash.startsWith('$2b$') && !user.password_hash.startsWith('$2a$'))) {
-                    const passwordHash = require('password-hash');
-                    if (passwordHash.verify(password, user.password_hash)) {
-                        isMatch = true;
-                        needsBcryptUpgrade = true;
-                    }
-                } else {
-                    isMatch = await bcrypt.compare(password, user.password_hash);
-                }
+                isMatch = await bcrypt.compare(password, user.password_hash);
             } catch (err) {
                 this.logger.error('Error verifying password hash:', err);
                 throw new HttpException({ success: false, error: 'Password hashing error: ' + (err as any).message }, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -102,11 +97,8 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Invalid credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
-            // Successful login -> Reset lockout and upgrade hash if needed
+            // Successful login -> Reset lockout
             const updateSuccessData: any = { failed_attempts: 0, locked_until: null };
-            if (needsBcryptUpgrade) {
-                updateSuccessData.password_hash = await bcrypt.hash(password, 10);
-            }
             await supabase.from('sakhi_clinic_users').update(updateSuccessData).eq('id', user.id);
 
             const displayName = user.name || user.full_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');

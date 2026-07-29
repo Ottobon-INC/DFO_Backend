@@ -58,22 +58,14 @@ export class SuperAdminAuthController {
                 }
             }
 
-            // 3. Crypto Verification & Transparent Upgrade
+            // 3. Crypto Verification
             let isMatch = false;
-            let needsBcryptUpgrade = false;
 
-            if (user.password_hash.startsWith('sha1$')) {
-                try {
-                    const passwordHash = require('password-hash');
-                    if (passwordHash.verify(password, user.password_hash)) {
-                        isMatch = true;
-                        needsBcryptUpgrade = true;
-                    }
-                } catch (err) {
-                    this.logger.error('Error verifying sha1 hash:', err);
-                }
-            } else {
+            try {
                 isMatch = await bcrypt.compare(password, user.password_hash);
+            } catch (err) {
+                this.logger.error('Error verifying password hash:', err);
+                throw new HttpException({ success: false, error: 'Password hashing error' }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
 
             // 4. Handle Failure & Counter
@@ -89,11 +81,8 @@ export class SuperAdminAuthController {
                 throw new HttpException({ success: false, error: 'Invalid super admin credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
-            // Successful login -> Reset lockout and upgrade hash if needed
+            // Successful login -> Reset lockout
             const updateSuccessData: any = { failed_attempts: 0, locked_until: null };
-            if (needsBcryptUpgrade) {
-                updateSuccessData.password_hash = await bcrypt.hash(password, 10);
-            }
             await supabase.from('super_admins').update(updateSuccessData).eq('id', user.id);
 
             // Issue JWT with super admin claims
