@@ -6,6 +6,7 @@ export interface TenantState {
   role?: string;
   is_super_admin?: boolean;
   is_clinic_admin?: boolean;
+  raw_token?: string;
 }
 
 export const tenantContext = new AsyncLocalStorage<TenantState>();

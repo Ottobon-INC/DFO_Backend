@@ -7,12 +7,12 @@ import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
-import { RolesGuard } from '../guards/roles.guard';
-import { Roles } from '../../../infrastructure/security/roles.decorator';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { Permissions } from '../../../infrastructure/security/permissions.decorator';
 import * as bcrypt from 'bcrypt';
 
 @Controller('api/v1/clinics/patients')
-@UseGuards(ClinicsAuthGuard, RolesGuard)
+@UseGuards(ClinicsAuthGuard, PermissionsGuard)
 export class PatientsController {
     private readonly logger = new Logger(PatientsController.name);
 
@@ -185,7 +185,7 @@ export class PatientsController {
     }
 
     @Post(':id/vitals')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async addVitals(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -226,7 +226,7 @@ export class PatientsController {
     }
 
     @Delete(':id/vitals/:vitalId')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async deleteVitals(@Param('id') id: string, @Param('vitalId') vitalId: string) {
         if (!this.utils.isUuid(id) || !this.utils.isUuid(vitalId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -257,7 +257,7 @@ export class PatientsController {
     }
 
     @Post(':id/allergies')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async addAllergy(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -298,7 +298,7 @@ export class PatientsController {
     }
 
     @Patch(':id/allergies/:allergyId')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async updateAllergy(@Param('id') id: string, @Param('allergyId') allergyId: string, @Body() body: any) {
         if (!this.utils.isUuid(id) || !this.utils.isUuid(allergyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -339,7 +339,7 @@ export class PatientsController {
     }
 
     @Delete(':id/allergies/:allergyId')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async deleteAllergy(@Param('id') id: string, @Param('allergyId') allergyId: string) {
         if (!this.utils.isUuid(id) || !this.utils.isUuid(allergyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -371,7 +371,7 @@ export class PatientsController {
     }
 
     @Post(':id/medical-history')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async addMedicalHistory(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -424,7 +424,7 @@ export class PatientsController {
     }
 
     @Delete(':id/medical-history/:historyId')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async deleteMedicalHistory(@Param('id') id: string, @Param('historyId') historyId: string) {
         if (!this.utils.isUuid(id) || !this.utils.isUuid(historyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -456,7 +456,7 @@ export class PatientsController {
     }
 
     @Patch(':id/medical-history/:historyId/resolve')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async resolveMedicalHistory(@Param('id') id: string, @Param('historyId') historyId: string) {
         if (!this.utils.isUuid(id) || !this.utils.isUuid(historyId)) throw new HttpException({ success: false, error: 'Invalid id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -530,7 +530,7 @@ export class PatientsController {
     }
 
     @Patch(':id')
-    @Roles('Admin', 'Receptionist', 'Doctor')
+    @Permissions('can_manage_schedule')
     async update(@Param('id') id: string, @Body() body: any) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -617,7 +617,7 @@ export class PatientsController {
     }
 
     @Post(':id/clinical-notes')
-    @Roles('Admin', 'Doctor')
+    @Permissions('can_write_clinical_notes')
     async createClinicalNote(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -660,7 +660,7 @@ export class PatientsController {
     }
 
     @Post(':id/notes')
-    @Roles('Admin', 'Doctor')
+    @Permissions('can_write_clinical_notes')
     async createNote(@Param('id') id: string, @Body() body: any) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -686,7 +686,7 @@ export class PatientsController {
     }
 
     @Put(':id/notes/:noteId')
-    @Roles('Admin', 'Doctor')
+    @Permissions('can_write_clinical_notes')
     async updateNote(@Param('id') id: string, @Param('noteId') noteId: string, @Body() body: any) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -741,7 +741,7 @@ export class PatientsController {
     }
 
     @Delete(':id/notes/:noteId')
-    @Roles('Admin', 'Doctor')
+    @Permissions('can_write_clinical_notes')
     async deleteNote(@Param('id') id: string, @Param('noteId') noteId: string) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -809,7 +809,7 @@ export class PatientsController {
     }
 
     @Post(':id/treatments')
-    @Roles('Admin', 'Doctor')
+    @Permissions('can_write_clinical_notes')
     async createTreatment(@Param('id') id: string, @Body() body: any) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -860,7 +860,7 @@ export class PatientsController {
     }
 
     @Put(':id/treatments/:treatmentId')
-    @Roles('Admin', 'Doctor')
+    @Permissions('can_write_clinical_notes')
     async updateTreatment(@Param('id') id: string, @Param('treatmentId') treatmentId: string, @Body() body: any) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -916,7 +916,7 @@ export class PatientsController {
     }
 
     @Delete(':id/treatments/:treatmentId')
-    @Roles('Admin', 'Doctor')
+    @Permissions('can_write_clinical_notes')
     async deleteTreatment(@Param('id') id: string, @Param('treatmentId') treatmentId: string) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -961,7 +961,7 @@ export class PatientsController {
     }
 
     @Post(':id/documents')
-    @Roles('Admin', 'Receptionist', 'Doctor', 'Nurse')
+    @Permissions('can_view_patients')
     async createDocument(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();

@@ -91,7 +91,8 @@ export class SuperAdminAuthController {
                     sub: user.id, 
                     user_id: user.id,
                     email: user.email, 
-                    role: 'SUPER_ADMIN', 
+                    role: 'authenticated', 
+                    user_role: 'SUPER_ADMIN', 
                     name: user.name,
                     is_super_admin: true,
                     is_clinic_admin: false
@@ -159,7 +160,8 @@ export class SuperAdminAuthController {
                     sub: newUser.id, 
                     user_id: newUser.id,
                     email: newUser.email, 
-                    role: 'SUPER_ADMIN', 
+                    role: 'authenticated', 
+                    user_role: 'SUPER_ADMIN', 
                     name: newUser.name,
                     is_super_admin: true,
                     is_clinic_admin: false

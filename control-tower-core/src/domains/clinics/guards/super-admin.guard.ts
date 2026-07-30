@@ -32,7 +32,7 @@ export class SuperAdminGuard implements CanActivate {
             request.user = {
                 id: decoded.sub,
                 email: decoded.email,
-                role: decoded.role,
+                role: decoded.user_role || decoded.role,
                 name: decoded.name,
                 is_super_admin: decoded.is_super_admin,
                 ...decoded,

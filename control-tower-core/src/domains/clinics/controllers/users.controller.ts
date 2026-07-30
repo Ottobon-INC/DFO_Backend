@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Put, Delete, Param, Body, Logger, HttpException, HttpStatus, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Put, Delete, Param, Body, Logger, HttpException, HttpStatus, Headers, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
@@ -9,8 +9,10 @@ import { ConfigService } from '@nestjs/config';
 import { StaffCacheService } from '../services/staff-cache.service';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
 import { StaffEvent } from '../../../infrastructure/events/event-payloads';
+import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 
 @Controller('api/clinic/users')
+@UseGuards(ClinicsAuthGuard)
 export class UsersController {
     private readonly logger = new Logger(UsersController.name);
     private readonly jwtSecret: string;
@@ -25,21 +27,9 @@ export class UsersController {
         if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
     }
 
-    private verifyToken(authHeader?: string) {
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            throw new HttpException({ success: false, error: 'Unauthorized' }, HttpStatus.UNAUTHORIZED);
-        }
-        const token = authHeader.split(' ')[1];
-        try {
-            return jwt.verify(token, this.jwtSecret) as any;
-        } catch (error) {
-            throw new HttpException({ success: false, error: 'Invalid or expired token' }, HttpStatus.UNAUTHORIZED);
-        }
-    }
-
     @Get()
     async listClinicUsers(@Headers('authorization') authHeader: string) {
-        const decoded = this.verifyToken(authHeader);
+        const decoded = TenantContext.getState() || {};
 
         if (!decoded.is_clinic_admin && !decoded.is_super_admin) {
             throw new HttpException({ success: false, error: 'Only Clinic Admins can view the staff list' }, HttpStatus.FORBIDDEN);
@@ -82,7 +72,7 @@ export class UsersController {
 
     @Post()
     async createClinicUser(@Headers('authorization') authHeader: string, @Body() body: any) {
-        const decoded = this.verifyToken(authHeader);
+        const decoded = TenantContext.getState() || {};
 
         // RBAC Enforcement: Must be a clinic admin
         if (!decoded.is_clinic_admin) {
@@ -137,7 +127,7 @@ export class UsersController {
 
             // Emit event for cache invalidation
             await this.eventsQueue.add(DFO_EVENTS.USER_CREATED, new StaffEvent(
-                decoded.clinic_id, decoded.sub, { action: 'create_clinic_user', user_id: data.id }
+                decoded.clinic_id, decoded.user_id, { action: 'create_clinic_user', user_id: data.id }
             ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return { success: true, data };
@@ -152,8 +142,8 @@ export class UsersController {
         @Headers('authorization') authHeader: string,
         @Body() body: any
     ) {
-        const decoded = this.verifyToken(authHeader);
-        if (!decoded.sub) {
+        const decoded = TenantContext.getState() || {};
+        if (!decoded.user_id) {
             throw new HttpException({ success: false, error: 'Invalid token payload' }, HttpStatus.UNAUTHORIZED);
         }
 
@@ -175,7 +165,7 @@ export class UsersController {
             const { data, error } = await supabase
                 .from('sakhi_clinic_users')
                 .update(payload)
-                .eq('id', decoded.sub)
+                .eq('id', decoded.user_id)
                 .select()
                 .single();
 
@@ -199,7 +189,7 @@ export class UsersController {
         @Param('id') id: string,
         @Body() body: any
     ) {
-        const decoded = this.verifyToken(authHeader);
+        const decoded = TenantContext.getState() || {};
 
         // RBAC Enforcement: Must be a clinic admin
         if (!decoded.is_clinic_admin) {
@@ -229,7 +219,7 @@ export class UsersController {
             }
 
             // Prevent editing another clinic admin (unless needed, but usually safe to prevent)
-            if (targetUser.is_clinic_admin && decoded.sub !== id) {
+            if (targetUser.is_clinic_admin && decoded.user_id !== id) {
                 throw new HttpException({ success: false, error: 'Cannot modify another Clinic Admin' }, HttpStatus.FORBIDDEN);
             }
 
@@ -266,7 +256,7 @@ export class UsersController {
 
             // Emit event for cache invalidation
             await this.eventsQueue.add(DFO_EVENTS.USER_UPDATED, new StaffEvent(
-                decoded.clinic_id, decoded.sub, { action: 'update_clinic_user', user_id: id }
+                decoded.clinic_id, decoded.user_id, { action: 'update_clinic_user', user_id: id }
             ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
             return { success: true, data };
@@ -282,7 +272,7 @@ export class UsersController {
         @Headers('authorization') authHeader: string,
         @Param('id') id: string
     ) {
-        const decoded = this.verifyToken(authHeader);
+        const decoded = TenantContext.getState() || {};
 
         // RBAC Enforcement: Must be a clinic admin
         if (!decoded.is_clinic_admin) {
@@ -299,7 +289,7 @@ export class UsersController {
             // Ensure the user being deleted belongs to the same clinic
             const { data: targetUser, error: targetError } = await supabase
                 .from('sakhi_clinic_users')
-                .select('clinic_id, is_clinic_admin')
+                .select('clinic_id, is_clinic_admin, email')
                 .eq('id', id)
                 .single();
 
@@ -322,10 +312,12 @@ export class UsersController {
                 .delete()
                 .eq('user_id', id);
 
-            // Soft delete the user from sakhi_clinic_users
+            const deletedEmail = `${targetUser.email}_deleted_${Date.now()}`;
+
+            // Soft delete the user from sakhi_clinic_users and rename email
             const { error } = await supabase
                 .from('sakhi_clinic_users')
-                .update({ is_active: false })
+                .update({ is_active: false, email: deletedEmail })
                 .eq('id', id);
 
             if (error) throw error;
@@ -340,6 +332,61 @@ export class UsersController {
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`DELETE /api/clinic/users/${id}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post(':id/restore')
+    async restoreUser(@Param('id') id: string, @Headers('authorization') authHeader: string) {
+        if (!authHeader) throw new UnauthorizedException('Missing Authorization header');
+        const decoded = TenantContext.getState() || {};
+
+        // RBAC Enforcement: Must be a clinic admin
+        if (!decoded.is_clinic_admin) {
+            throw new HttpException({ success: false, error: 'Only Clinic Admins can restore team members' }, HttpStatus.FORBIDDEN);
+        }
+
+        if (!decoded.clinic_id) {
+            throw new HttpException({ success: false, error: 'Admin is not bound to a clinic' }, HttpStatus.BAD_REQUEST);
+        }
+
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            // Ensure the user being restored belongs to the same clinic
+            const { data: targetUser, error: targetError } = await supabase
+                .from('sakhi_clinic_users')
+                .select('clinic_id, email')
+                .eq('id', id)
+                .single();
+
+            if (targetError || !targetUser) {
+                throw new HttpException({ success: false, error: 'User not found' }, HttpStatus.NOT_FOUND);
+            }
+
+            if (targetUser.clinic_id !== decoded.clinic_id) {
+                throw new HttpException({ success: false, error: 'Cannot restore users outside your clinic' }, HttpStatus.FORBIDDEN);
+            }
+
+            // Restore email by stripping _deleted_ suffix
+            let restoredEmail = targetUser.email;
+            const suffixMatch = targetUser.email.match(/_deleted_\d+$/);
+            if (suffixMatch) {
+                restoredEmail = targetUser.email.substring(0, suffixMatch.index);
+            }
+
+            // Update user to be active again
+            const { error } = await supabase
+                .from('sakhi_clinic_users')
+                .update({ is_active: true, email: restoredEmail })
+                .eq('id', id);
+
+            if (error) throw error;
+
+            return { success: true, message: 'Team member restored successfully' };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/clinic/users/${id}/restore`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

@@ -75,7 +75,7 @@ export class RoomAllocationService {
         if (countError) throw new HttpException(countError.message, HttpStatus.INTERNAL_SERVER_ERROR);
         if (count && count > 0) throw new HttpException('Cannot delete category with existing rooms', HttpStatus.BAD_REQUEST);
 
-        const { error } = await supabase.from('sakhi_clinic_room_categories').delete().eq('id', id).eq('clinic_id', clinic_id);
+        const { error } = await supabase.from('sakhi_clinic_room_categories').update({ is_active: false }).eq('id', id).eq('clinic_id', clinic_id);
         if (error) throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
         return { success: true };
     }
@@ -164,7 +164,7 @@ export class RoomAllocationService {
             throw new HttpException('Cannot delete room: There are active patients in this room.', HttpStatus.CONFLICT);
         }
 
-        const { error } = await supabase.from('sakhi_clinic_rooms').delete().eq('id', id).eq('clinic_id', clinic_id);
+        const { error } = await supabase.from('sakhi_clinic_rooms').update({ is_active: false }).eq('id', id).eq('clinic_id', clinic_id);
         if (error) throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
         return { success: true };
     }
@@ -288,7 +288,7 @@ export class RoomAllocationService {
             throw new HttpException('Cannot delete bed: It is currently occupied by a patient.', HttpStatus.CONFLICT);
         }
 
-        const { error } = await supabase.from('sakhi_clinic_beds').delete().eq('id', id);
+        const { error } = await supabase.from('sakhi_clinic_beds').update({ is_active: false }).eq('id', id);
         if (error) throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
         return { success: true };
     }

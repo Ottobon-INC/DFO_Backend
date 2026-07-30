@@ -3,8 +3,8 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { RoomAllocationService } from '../services/room-allocation.service';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
-import { RolesGuard } from '../guards/roles.guard';
-import { Roles } from '../../../infrastructure/security/roles.decorator';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { Permissions } from '../../../infrastructure/security/permissions.decorator';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
 import { AdmissionEvent } from '../../../infrastructure/events/event-payloads';
@@ -17,7 +17,7 @@ import {
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 
 @Controller('api/v1/clinics')
-@UseGuards(ClinicsAuthGuard, RolesGuard)
+@UseGuards(ClinicsAuthGuard, PermissionsGuard)
 export class RoomAllocationController {
     private readonly logger = new Logger(RoomAllocationController.name);
 
@@ -37,7 +37,7 @@ export class RoomAllocationController {
     }
 
     @Post('room-categories')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async createCategory(@Body() body: CreateRoomCategoryDto) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
@@ -46,7 +46,7 @@ export class RoomAllocationController {
     }
 
     @Patch('room-categories/:id')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async updateCategory(@Param('id') id: string, @Body() body: UpdateRoomCategoryDto) {
         if (!this.utils.isUuid(id)) throw new HttpException('Invalid ID', HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -56,7 +56,7 @@ export class RoomAllocationController {
     }
 
     @Delete('room-categories/:id')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async deleteCategory(@Param('id') id: string) {
         if (!this.utils.isUuid(id)) throw new HttpException('Invalid ID', HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -83,7 +83,7 @@ export class RoomAllocationController {
     }
 
     @Post('rooms')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async createRoom(@Body() body: CreateRoomDto) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
@@ -92,7 +92,7 @@ export class RoomAllocationController {
     }
 
     @Patch('rooms/:id')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async updateRoom(@Param('id') id: string, @Body() body: UpdateRoomDto) {
         if (!this.utils.isUuid(id)) throw new HttpException('Invalid ID', HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -102,7 +102,7 @@ export class RoomAllocationController {
     }
 
     @Delete('rooms/:id')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async deleteRoom(@Param('id') id: string) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
@@ -120,7 +120,7 @@ export class RoomAllocationController {
     }
 
     @Post('rooms/:roomId/beds')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async createBed(@Param('roomId') roomId: string, @Body() body: CreateBedDto) {
         if (!this.utils.isUuid(roomId)) throw new HttpException('Invalid ID', HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -130,7 +130,7 @@ export class RoomAllocationController {
     }
 
     @Put('beds/:id')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async updateBed(@Param('id') id: string, @Body() body: any) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
@@ -139,7 +139,7 @@ export class RoomAllocationController {
     }
 
     @Patch('beds/:id/status')
-    @Roles('Admin', 'Superadmin', 'Nurse', 'Doctor')
+    @Permissions('can_update_bed_status')
     async updateBedStatus(@Param('id') id: string, @Body() body: UpdateBedStatusDto) {
         if (!this.utils.isUuid(id)) throw new HttpException('Invalid ID', HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -149,7 +149,7 @@ export class RoomAllocationController {
     }
 
     @Delete('beds/:id')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async deleteBed(@Param('id') id: string) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
@@ -167,7 +167,7 @@ export class RoomAllocationController {
     }
 
     @Post('admissions')
-    @Roles('Admin', 'Doctor', 'Nurse', 'Receptionist')
+    @Permissions('can_manage_admissions')
     async createAdmission(@Body() body: CreateAdmissionDto) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
@@ -186,7 +186,7 @@ export class RoomAllocationController {
 
     @Post('admissions/:id/discharge')
     @Patch('admissions/:id/discharge')
-    @Roles('Admin', 'Doctor', 'Nurse', 'Receptionist')
+    @Permissions('can_manage_admissions')
     async dischargeAdmission(@Param('id') id: string) {
         if (!this.utils.isUuid(id)) throw new HttpException('Invalid ID', HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -205,7 +205,7 @@ export class RoomAllocationController {
     }
 
     @Post('admissions/:id/cancel')
-    @Roles('Admin', 'Superadmin', 'Receptionist')
+    @Permissions('can_manage_rooms')
     async cancelAdmission(@Param('id') id: string) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException('Tenant context missing', HttpStatus.BAD_REQUEST);
@@ -222,7 +222,7 @@ export class RoomAllocationController {
     }
 
     @Post('admissions/:id/transfer')
-    @Roles('Admin', 'Doctor', 'Nurse', 'Receptionist')
+    @Permissions('can_manage_admissions')
     async transferBed(@Param('id') id: string, @Body() body: TransferBedDto) {
         if (!this.utils.isUuid(id)) throw new HttpException('Invalid ID', HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();

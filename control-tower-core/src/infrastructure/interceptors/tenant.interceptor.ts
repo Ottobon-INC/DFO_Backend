@@ -3,51 +3,31 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
-  Logger,
-  HttpException,
-  HttpStatus,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Observable } from 'rxjs';
-import * as jwt from 'jsonwebtoken';
 import { tenantContext, TenantState } from '../context/tenant.context';
 
 @Injectable()
 export class TenantInterceptor implements NestInterceptor {
-  private readonly logger = new Logger(TenantInterceptor.name);
-  private readonly jwtSecret: string;
-
-  constructor(private readonly configService: ConfigService) {
-    this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
-    if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
-  }
+  constructor() {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest();
-    const authHeader = request?.headers?.authorization;
-
+    const user = request.user;
     let tenantState: TenantState = {};
 
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      try {
-        // Decode without verifying if we just want to extract it globally fail-soft.
-        // We do verify it to ensure we aren't parsing malicious spoofed payloads, 
-        // but we catch errors to not fail the request if it's invalid.
-        const decoded = jwt.verify(token, this.jwtSecret) as any;
-        
-        tenantState = {
-          user_id: decoded.user_id || decoded.sub,
-          clinic_id: decoded.clinic_id,
-          role: decoded.role,
-          is_super_admin: decoded.is_super_admin,
-          is_clinic_admin: decoded.is_clinic_admin,
-        };
-      } catch (error: any) {
-        // Fail-soft: if token is expired or invalid, we don't throw an error here.
-        // The existing AuthGuards will handle throwing the 401.
-        this.logger.error(`Failed to verify JWT in TenantInterceptor: ${error.message}`);
-      }
+    if (user) {
+      const authHeader = request?.headers?.authorization;
+      const raw_token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : undefined;
+
+      tenantState = {
+        user_id: user.id || user.sub,
+        clinic_id: user.clinic_id,
+        role: user.role,
+        is_super_admin: user.is_super_admin,
+        is_clinic_admin: user.is_clinic_admin,
+        raw_token,
+      };
     }
 
     // Run the execution context with the tenant state

@@ -126,7 +126,7 @@ export class ClinicsUtilsService {
 
         if (existingAppts && existingAppts.length > 0) {
             let overlappingCount = 0;
-            let conflictClinicId = null;
+            let conflictClinicId: string | undefined = undefined;
             
             for (const appt of existingAppts) {
                 // If the appointment overlaps exactly with our requested time

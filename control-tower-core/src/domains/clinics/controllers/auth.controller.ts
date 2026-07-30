@@ -109,7 +109,8 @@ export class AuthController {
                     sub: user.id,
                     user_id: user.id,
                     email: user.email,
-                    role: user.role,
+                    role: 'authenticated',
+                    user_role: user.role,
                     name: [user.first_name, user.last_name].filter(Boolean).join(' ') || (user.email ? user.email.split('@')[0] : 'User'),
                     first_name: user.first_name,
                     last_name: user.last_name,
@@ -215,7 +216,7 @@ export class AuthController {
                 user: {
                     id: decoded.sub,
                     email: decoded.email,
-                    role: decoded.role,
+                    role: decoded.user_role || decoded.role,
                     name: decoded.name,
                     clinic_id: decoded.clinic_id,
                 }
@@ -267,7 +268,8 @@ export class AuthController {
             sub: data.id,
             user_id: data.id,
             email: data.email,
-            role: data.role,
+            role: 'authenticated',
+            user_role: data.role,
             name: data.name,
             clinic_id: data.clinic_id,
             is_super_admin: decoded.is_super_admin,
