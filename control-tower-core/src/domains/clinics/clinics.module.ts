@@ -9,6 +9,12 @@ import { DocumentsService } from './services/documents.service';
 import { StaffCacheService } from './services/staff-cache.service';
 import { RoomAllocationService } from './services/room-allocation.service';
 import { SchedulesService } from './services/schedules.service';
+import { QmsEngineService } from './services/qms-engine.service';
+import { QmsNotificationService } from './services/qms-notification.service';
+import { QmsNotificationProcessor } from './services/qms-notification.processor';
+import { AnalyticsService } from './services/analytics.service';
+import { SlotEngineService } from './services/slot-engine.service';
+import { QmsGateway } from './gateways/qms.gateway';
 
 // Guards
 import { ClinicsAuthGuard } from './guards/clinics-auth.guard';
@@ -36,6 +42,9 @@ import { DocumentsController } from './controllers/documents.controller';
 import { AuditController } from './controllers/audit.controller';
 import { RoomAllocationController } from './controllers/room-allocation.controller';
 import { SchedulesController } from './controllers/schedules.controller';
+import { QMSConfigController } from './controllers/qms-config.controller';
+import { QMSQueueController } from './controllers/qms-queue.controller';
+import { AnalyticsController } from './controllers/analytics.controller';
 
 // Feature Modules
 import { AwsModule } from '../../infrastructure/aws/aws.module';
@@ -53,6 +62,12 @@ import { BullModule } from '@nestjs/bullmq';
         ClinicsUtilsService,
         DocumentsService,
         StaffCacheService,
+        QmsEngineService,
+        SlotEngineService,
+        QmsNotificationService,
+        QmsNotificationProcessor,
+        AnalyticsService,
+        QmsGateway,
         ClinicsAuthGuard,
         AuditEventProcessor,
         CacheEventProcessor,
@@ -78,6 +93,9 @@ import { BullModule } from '@nestjs/bullmq';
         AuditController,
         RoomAllocationController,
         SchedulesController,
+        QMSConfigController,
+        QMSQueueController,
+        AnalyticsController,
     ],
     exports: [
         ClinicsSupabaseService,

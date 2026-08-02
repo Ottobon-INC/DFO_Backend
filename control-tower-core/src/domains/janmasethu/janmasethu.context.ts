@@ -34,14 +34,19 @@ export class JanmasethuContextService {
         const messages = await this.repository.findMessagesByThreadId(threadId);
         const summary = await this.repository.findSummaryByThread(threadId);
 
+        let patientId = thread.metadata?.patient_id;
+        if (!patientId && thread.user_id) {
+            patientId = await this.repository.findPatientIdByPhone(thread.user_id);
+        }
+
         let riskLogs: JanmasethuRiskLog[] = [];
-        if (thread.metadata?.patient_id) {
-            riskLogs = await this.repository.findRiskLogsByPatient(thread.metadata.patient_id, 3);
+        if (patientId) {
+            riskLogs = await this.repository.findRiskLogsByPatient(patientId, 3);
         }
 
         return {
             threadId: thread.id,
-            patientId: thread.metadata?.patient_id,
+            patientId: patientId,
             status: thread.status,
             structured_memory: {
                 summary: summary?.summary_text || 'No summary available yet.',

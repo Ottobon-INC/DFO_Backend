@@ -51,6 +51,7 @@ import { SupportEngagementModule } from './support-engagement/support-engagement
 import { ThreadOperationsController } from './thread-operations.controller';
 import { ThreadOperationsRepository } from './thread-operations.repository';
 import { PiiDecrypterService } from './pii-decrypter.service';
+import { ChatDecrypterService } from './chat-decrypter.service';
 import { JanmasethuAssignmentEngine } from './janmasethu-assignment.engine';
 
 @Module({
@@ -100,6 +101,7 @@ import { JanmasethuAssignmentEngine } from './janmasethu-assignment.engine';
         EmergencyHotlineService,
         JanmasethuMaintenanceService,
         PiiDecrypterService,
+        ChatDecrypterService,
         ThreadOperationsRepository,
         JanmasethuAssignmentEngine,
     ],

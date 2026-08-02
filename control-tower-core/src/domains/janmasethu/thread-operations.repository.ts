@@ -1,6 +1,7 @@
 import { Injectable, Logger, Inject, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { PiiDecrypterService } from './pii-decrypter.service';
+import { ChatDecrypterService } from './chat-decrypter.service';
 
 @Injectable()
 export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy {
@@ -11,14 +12,15 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     constructor(
         @Inject('SUPABASE_CLIENT') private readonly supabase: SupabaseClient,
         @Inject('ORG_SUPABASE_CLIENT') private readonly orgSupabase: SupabaseClient,
-        private readonly piiDecrypter: PiiDecrypterService
+        private readonly piiDecrypter: PiiDecrypterService,
+        private readonly chatDecrypter: ChatDecrypterService
     ) { }
 
     async onModuleInit() {
         // 1. Initialize lastProcessedId with the highest existing message ID
         try {
             const { data, error } = await this.orgSupabase
-                .from('sakhi_conversations_new')
+                .from('sakhi_encrypted_chats')
                 .select('id')
                 .order('id', { ascending: false })
                 .limit(1)
@@ -40,7 +42,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             .on('postgres_changes', { 
                 event: 'INSERT', 
                 schema: 'public', 
-                table: 'sakhi_conversations_new' 
+                table: 'sakhi_encrypted_chats' 
             }, async (payload) => {
                 try {
                     const msg = payload.new;
@@ -65,7 +67,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             }
         }, 5000); // Check every 5 seconds
 
-        this.logger.log('Started polling fallback (5s interval) for sakhi_conversations_new.');
+        this.logger.log('Started polling fallback (5s interval) for sakhi_encrypted_chats.');
     }
 
     onModuleDestroy() {
@@ -77,7 +79,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
     async pollNewMessages() {
         const { data, error } = await this.orgSupabase
-            .from('sakhi_conversations_new')
+            .from('sakhi_encrypted_chats')
             .select('*')
             .gt('id', this.lastProcessedId)
             .order('id', { ascending: true });
@@ -88,7 +90,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         }
 
         if (data && data.length > 0) {
-            this.logger.log(`Polled ${data.length} new messages from sakhi_conversations_new.`);
+            this.logger.log(`Polled ${data.length} new messages from sakhi_encrypted_chats.`);
             for (const msg of data) {
                 if (msg.id > this.lastProcessedId) {
                     this.lastProcessedId = msg.id;
@@ -99,11 +101,11 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     }
 
     async handleIncomingMessage(msg: any) {
-        if (!msg || msg.message_type !== 'user' || !msg.user_id) {
+        if (!msg || msg.role !== 'user' || !msg.user_id) {
             return;
         }
 
-        const text = msg.message_text || '';
+        const text = this.chatDecrypter.decrypt(msg.user_id, msg.message_content || '');
         this.logger.log(`New message from patient ${msg.user_id}: "${text}"`);
 
         // Decrypt PII and GMED tokens in the message text first before keyword/sentiment analysis
@@ -207,8 +209,8 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
                     user_id: msg.user_id,
                     channel: 'whatsapp',
                     status: 'green',
-                    ownership: 'AI',
-                    ai_suppressed: false,
+                    ownership: 'AI', is_locked: false,
+                    ownership: 'AI', is_locked: false,
                     last_message_preview: decryptedText.substring(0, 100),
                     last_message_at: new Date(),
                     created_at: new Date(),
@@ -291,12 +293,13 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             );
 
             // Send automated "We will assist you ASAP" response to Sakhi chatbot
+            const encryptedReply = this.chatDecrypter.encrypt(msg.user_id, "We will assist you ASAP");
             const { error: replyError } = await this.orgSupabase
-                .from('sakhi_conversations_new')
+                .from('sakhi_encrypted_chats')
                 .insert([{
                     user_id: msg.user_id,
-                    message_text: "We will assist you ASAP",
-                    message_type: 'sakhi',
+                    message_content: encryptedReply,
+                    role: 'sakhi',
                     language: 'en',
                     created_at: new Date()
                 }]);
@@ -435,7 +438,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         }
 
         let query = this.orgSupabase
-            .from('sakhi_conversations_new')
+            .from('sakhi_encrypted_chats')
             .select('*');
 
         const rawUserId = thread.user_id;
@@ -470,12 +473,17 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             
         if (error) throw error;
 
+        // First decrypt all messages
+        for (const m of data || []) {
+            m._decrypted = this.chatDecrypter.decrypt(m.user_id || thread.user_id, m.message_content || '');
+        }
+
         // Extract PII and GMED tokens across all messages to perform a single batch query
         const tokens = new Set<string>();
         const gmedTokens = new Set<string>();
         for (const m of data || []) {
-            if (m.message_text) {
-                const matches = m.message_text.match(/\{\{[A-Z]+_[a-zA-Z0-9]+\}\}/g);
+            if (m._decrypted) {
+                const matches = m._decrypted.match(/\{\{[A-Z]+_[a-zA-Z0-9]+\}\}/g);
                 if (matches) {
                     for (const t of matches) {
                         if (t.startsWith('{{GMED_')) {
@@ -525,14 +533,14 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         return (data || [])
             .map(m => {
                 let sender_type = 'HUMAN';
-                if (m.message_type === 'user') {
+                if (m.role === 'user') {
                     sender_type = 'PATIENT';
-                } else if (m.message_type === 'sakhi') {
+                } else if (m.role === 'sakhi' || m.role === 'assistant') {
                     sender_type = 'AI';
                 }
 
                 // Replace tokens with decrypted values
-                let text = m.message_text || '';
+                let text = m._decrypted || '';
                 const matches = text.match(/\{\{[A-Z]+_[a-zA-Z0-9]+\}\}/g);
                 if (matches) {
                     for (const t of matches) {
@@ -548,7 +556,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
                 return {
                     id: m.id.toString(),
                     thread_id: threadId,
-                    sender_id: m.message_type === 'user' ? thread.user_id : 'SYSTEM',
+                    sender_id: m.role === 'user' ? thread.user_id : 'SYSTEM',
                     sender_type: sender_type,
                     message: text,
                     content: text,
@@ -590,6 +598,22 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         await this.replyToThread(id, 'SYSTEM', 'SYSTEM', `Thread assigned to ${clinicianName}.`);
     }
 
+    async findPatientIdByPhone(phone: string): Promise<string | null> {
+        if (!phone) return null;
+        let normalizedPhone = phone.replace(/^\+91/, '').replace(/^91/, '').replace(/^\+/, '');
+        const { data, error } = await this.orgSupabase
+            .from('sakhi_clinic_patients')
+            .select('id')
+            .eq('mobile', normalizedPhone)
+            .maybeSingle();
+        
+        if (error) {
+            this.logger.error(`Error finding patient by phone ${normalizedPhone}: ${error.message}`);
+            return null;
+        }
+        return data?.id || null;
+    }
+
     async escalateThread(id: string, reason: string, status: string, score: number, actor: string) {
         const { error } = await this.supabase
             .from('conversation_threads')
@@ -614,12 +638,13 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             throw new Error('Thread not found or user_id missing');
         }
 
+        const encrypted = this.chatDecrypter.encrypt(thread.user_id, message);
         const { data, error } = await this.orgSupabase
-            .from('sakhi_conversations_new')
+            .from('sakhi_encrypted_chats')
             .insert([{
                 user_id: thread.user_id,
-                message_text: message,
-                message_type: 'human',
+                message_content: encrypted,
+                role: 'human',
                 language: 'en',
                 created_at: new Date()
             }])
@@ -657,7 +682,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
                 assigned_user_id: null,
                 assigned_role: null,
                 status: 'resolved',
-                ai_suppressed: false,
+                ownership: 'AI', is_locked: false,
                 resolved_at: new Date(),
                 resolved_by: userId || null,
                 updated_at: new Date()
