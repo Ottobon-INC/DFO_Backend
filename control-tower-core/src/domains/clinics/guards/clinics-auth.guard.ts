@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
@@ -28,18 +28,29 @@ export class ClinicsAuthGuard implements CanActivate {
 
         try {
             const decoded = jwt.verify(token, this.jwtSecret) as any;
-            
-            // Query DB to verify the user is still active (blocks Zombie Tokens)
-            const supabase = this.supabaseService.getClient();
-            const { data: userRecord, error } = await supabase
-                .from('sakhi_clinic_users')
-                .select('is_active')
-                .eq('id', decoded.sub)
-                .single();
+            if (decoded.is_super_admin) {
+                // Bypass clinic user check for super admins
+            } else {
+                // Query DB to verify the user is still active (blocks Zombie Tokens)
+                const supabase = this.supabaseService.getClient();
+                const { data: userRecord, error } = await supabase
+                    .from('sakhi_clinic_users')
+                    .select('is_active')
+                    .eq('id', decoded.sub)
+                    .single();
 
-            if (error || !userRecord || userRecord.is_active === false) {
-                this.logger.warn(`Rejected soft-deleted or non-existent user token for ID: ${decoded.sub}`);
-                throw new UnauthorizedException('User account is disabled or deleted');
+                if (error) {
+                    this.logger.error(`Failed to verify user token status in Supabase for ID: ${decoded.sub}. Error: ${JSON.stringify(error)}`);
+                    if (error.message?.includes('fetch failed') || error.code === 'UND_ERR_CONNECT_TIMEOUT') {
+                        throw new ServiceUnavailableException('Database connection timeout. Please try again later.'); 
+                    }
+                    throw new UnauthorizedException('Error verifying user account status');
+                }
+
+                if (!userRecord || userRecord.is_active === false) {
+                    this.logger.warn(`Rejected soft-deleted or non-existent user token for ID: ${decoded.sub}`);
+                    throw new UnauthorizedException('User account is disabled or deleted');
+                }
             }
 
             // Attach user info to request for downstream use
@@ -51,7 +62,10 @@ export class ClinicsAuthGuard implements CanActivate {
                 ...decoded,
             };
             return true;
-        } catch (err) {
+        } catch (err: any) {
+            if (err instanceof UnauthorizedException) {
+                throw err;
+            }
             this.logger.warn('JWT validation failed');
             throw new UnauthorizedException('Invalid or expired token');
         }

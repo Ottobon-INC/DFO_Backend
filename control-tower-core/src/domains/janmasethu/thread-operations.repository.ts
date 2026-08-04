@@ -76,25 +76,29 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     }
 
     async pollNewMessages() {
-        const { data, error } = await this.orgSupabase
-            .from('sakhi_conversations_new')
-            .select('*')
-            .gt('id', this.lastProcessedId)
-            .order('id', { ascending: true });
+        try {
+            const { data, error } = await this.orgSupabase
+                .from('sakhi_conversations_new')
+                .select('*')
+                .gt('id', this.lastProcessedId)
+                .order('id', { ascending: true });
 
-        if (error) {
-            this.logger.error('Failed to poll new messages:', error.message);
-            return;
-        }
+            if (error) {
+                this.logger.warn(`Failed to poll new messages: ${error.message || JSON.stringify(error)}`);
+                return;
+            }
 
-        if (data && data.length > 0) {
-            this.logger.log(`Polled ${data.length} new messages from sakhi_conversations_new.`);
-            for (const msg of data) {
-                if (msg.id > this.lastProcessedId) {
-                    this.lastProcessedId = msg.id;
-                    await this.handleIncomingMessage(msg);
+            if (data && data.length > 0) {
+                this.logger.log(`Polled ${data.length} new messages from sakhi_conversations_new.`);
+                for (const msg of data) {
+                    if (msg.id > this.lastProcessedId) {
+                        this.lastProcessedId = msg.id;
+                        await this.handleIncomingMessage(msg);
+                    }
                 }
             }
+        } catch (e: any) {
+            this.logger.warn(`Network error in pollNewMessages: ${e.message || 'fetch failed'}`);
         }
     }
 

@@ -4,12 +4,17 @@ import {
     ExecutionContext,
     UnauthorizedException,
 } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import * as jwt from 'jsonwebtoken';
 import { JanmasethuUserRole } from '../janmasethu.types';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-    constructor(private readonly jwtService: JwtService) { }
+    private readonly jwtSecret: string;
+    constructor(private readonly configService: ConfigService) {
+        this.jwtSecret = this.configService.get<string>('JWT_SECRET') as string;
+        if (!this.jwtSecret) throw new Error('JWT_SECRET must be defined in environment configuration');
+    }
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
         const request = context.switchToHttp().getRequest();
@@ -39,7 +44,7 @@ export class JwtAuthGuard implements CanActivate {
         const token = authHeader.split(' ')[1];
 
         try {
-            const payload = this.jwtService.verify(token);
+            const payload = jwt.verify(token, this.jwtSecret) as any;
             // Attach user context to request
             request.user = {
                 id: payload.sub,

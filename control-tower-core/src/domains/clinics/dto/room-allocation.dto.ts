@@ -10,6 +10,10 @@ export class CreateRoomCategoryDto {
 
     @IsNumber()
     daily_rate: number;
+
+    @IsString()
+    @IsOptional()
+    tier?: string;
 }
 
 export class UpdateRoomCategoryDto {
@@ -28,6 +32,10 @@ export class UpdateRoomCategoryDto {
     @IsBoolean()
     @IsOptional()
     is_active?: boolean;
+
+    @IsString()
+    @IsOptional()
+    tier?: string;
 }
 
 export class CreateRoomDto {
@@ -43,6 +51,10 @@ export class CreateRoomDto {
 
     @IsNumber()
     capacity: number;
+
+    @IsString()
+    @IsOptional()
+    name?: string;
 }
 
 export class UpdateRoomDto {
@@ -65,6 +77,10 @@ export class UpdateRoomDto {
     @IsBoolean()
     @IsOptional()
     is_active?: boolean;
+
+    @IsString()
+    @IsOptional()
+    name?: string;
 }
 
 export class CreateBedDto {

@@ -25,6 +25,7 @@ export class RoomAllocationService {
 
     async createCategory(clinic_id: string, payload: any) {
         const supabase = this.supabaseService.getClient();
+        
         const sanitized = this.utils.sanitizePayload({ clinic_id, ...payload });
         const { data, error } = await supabase.from('sakhi_clinic_room_categories').insert(sanitized).select().single();
         if (error) {
@@ -137,7 +138,7 @@ export class RoomAllocationService {
                 throw new HttpException(`Cannot reduce capacity to ${payload.capacity}: This room already has ${count} beds.`, HttpStatus.BAD_REQUEST);
             }
         }
-
+        
         const sanitized = this.utils.sanitizePayload(payload);
         const { data, error } = await supabase
             .from('sakhi_clinic_rooms')

@@ -55,7 +55,7 @@ BEGIN
     -- This relies on the UNIQUE (email, domain) or UNIQUE (email) constraint on sakhi_clinic_users.
     -- If another transaction inserts this email right before us, this statement will throw a unique violation (23505),
     -- which will be caught by the EXCEPTION block, rolling back the clinic insert automatically.
-    INSERT INTO sakhi_clinic_users (name, email, password_hash, role, clinic_id, is_clinic_admin, is_super_admin)
+    INSERT INTO sakhi_clinic_users (first_name, email, password_hash, role, clinic_id, is_clinic_admin, is_super_admin)
     VALUES (p_owner_name, p_owner_email, p_password_hash, p_owner_role, v_clinic_id, TRUE, FALSE)
     RETURNING id INTO v_admin_id;
 

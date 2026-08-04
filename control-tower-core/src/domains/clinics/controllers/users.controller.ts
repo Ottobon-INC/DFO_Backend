@@ -83,9 +83,13 @@ export class UsersController {
             throw new HttpException({ success: false, error: 'Admin is not bound to a clinic' }, HttpStatus.BAD_REQUEST);
         }
 
-        const { first_name, last_name, middle_name, hospital_id, phone_number, department, designation, email, password, role } = body;
+        const { first_name, last_name, middle_name, hospital_id, phone_number, department, designation, email, password, role, name } = body;
 
-        if (!first_name || !email || !password || !role) {
+        // Fallback for frontend sending 'name' instead of 'first_name'/'last_name'
+        const actualFirstName = first_name || (name ? name.split(' ')[0] : undefined);
+        const actualLastName = last_name || (name && name.includes(' ') ? name.substring(name.indexOf(' ') + 1) : undefined);
+
+        if (!actualFirstName || !email || !password || !role) {
             throw new HttpException({ success: false, error: 'First name, email, password, and role are required' }, HttpStatus.BAD_REQUEST);
         }
 
@@ -101,8 +105,8 @@ export class UsersController {
 
             // Force the new user to be in the same clinic as the admin who is creating them
             const payload = {
-                first_name,
-                last_name,
+                first_name: actualFirstName,
+                last_name: actualLastName,
                 middle_name,
                 hospital_id,
                 phone_number,

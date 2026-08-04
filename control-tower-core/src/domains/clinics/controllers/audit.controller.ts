@@ -25,10 +25,13 @@ export class AuditController {
         const clinic_id = TenantContext.getClinicId();
         const role = TenantContext.getRole();
         
-        if (!clinic_id) {
+        const isSuperAdmin = TenantContext.isSuperAdmin();
+        const isClinicAdmin = TenantContext.getState()?.is_clinic_admin;
+        
+        if (!clinic_id && !isSuperAdmin) {
             throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
         }
-        if (role !== 'Admin') {
+        if (role !== 'Admin' && role !== 'CRO' && !isSuperAdmin && !isClinicAdmin) {
             throw new HttpException({ success: false, error: 'Forbidden. Admin access required.' }, HttpStatus.FORBIDDEN);
         }
 

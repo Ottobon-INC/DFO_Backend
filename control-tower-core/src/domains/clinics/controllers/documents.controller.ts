@@ -165,7 +165,7 @@ export class DocumentsController {
             const supabase = this.supabaseService.getClient();
             const { data, count, error } = await supabase
                 .from('sakhi_clinic_documents')
-                .select('*, uploader:sakhi_clinic_users!uploaded_by(name)', { count: 'exact' })
+                .select('*, uploader:sakhi_clinic_users!uploaded_by(first_name, last_name)', { count: 'exact' })
                 .eq('clinic_id', clinic_id)
                 .is('patient_id', null)
                 .eq('status', 'unassigned')

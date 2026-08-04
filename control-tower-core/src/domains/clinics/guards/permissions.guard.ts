@@ -39,9 +39,11 @@ export class PermissionsGuard implements CanActivate {
         // Check if the user has AT LEAST ONE of the required permissions
         const hasPermission = requiredPermissions.some(permission => userPermissions.includes(permission.toLowerCase()));
         
-        // Note: Super Admins NO LONGER bypass this automatically. 
-        // If a Super Admin needs medical permissions, they need a medical role in that clinic.
-        if (hasPermission) {
+        // Super Admins and Clinic Admins are inherently authorized to manage the clinic's administrative operations.
+        const isSuperAdmin = user.is_super_admin;
+        const isClinicAdmin = user.is_clinic_admin;
+
+        if (hasPermission || isSuperAdmin || isClinicAdmin) {
             return true;
         }
 
