@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
 import { PatientEvent } from '../../../infrastructure/events/event-payloads';
+import { isValidPhoneNumber, formatPhoneNumber } from '../../../common/validators/phone.validator';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
@@ -75,13 +76,14 @@ export class PatientsController {
             
             // Strict number format check (supports 10-15 digits, optional leading +)
             const mobileStr = String(mobile).trim();
-            const isValidMobile = /^\+?[1-9]\d{9,14}$/.test(mobileStr);
-            if (!isValidMobile) {
+            if (!isValidPhoneNumber(mobileStr)) {
                 throw new HttpException({ success: false, error: 'Invalid mobile number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
             }
+            
+            const cleanMobile = formatPhoneNumber(mobileStr);
 
             const { data: existing, error: existingError } = await supabase
-                .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', mobile).maybeSingle();
+                .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', cleanMobile).maybeSingle();
             if (existingError && existingError.code !== 'PGRST116') throw existingError;
             if (existing) {
                 throw new HttpException({ success: false, error: 'Patient with this mobile already exists' }, HttpStatus.CONFLICT);
@@ -94,7 +96,7 @@ export class PatientsController {
             const payload = this.utils.sanitizePayload({
                 clinic_id, uhid, lead_id: tv(body.lead_id), name, relation: tv(body.relation), marital_status, gender,
                 dob: tv(body.dob), age: tv(body.age), blood_group: tv(body.blood_group) ?? tv(body.bloodGroup),
-                aadhar: tv(body.aadhar), mobile, email: tv(body.email), house: tv(body.house),
+                aadhar: tv(body.aadhar), mobile: cleanMobile, email: tv(body.email), house: tv(body.house),
                 street: tv(body.street) ?? tv(body.address), area: tv(body.area), city: tv(body.city),
                 district: tv(body.district), state: tv(body.state),
                 postal_code: tv(body.postal_code) ?? tv(body.postalCode),

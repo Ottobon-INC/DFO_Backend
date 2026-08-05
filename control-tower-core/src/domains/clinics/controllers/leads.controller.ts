@@ -10,6 +10,9 @@ import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { ClinicsEncryptionService } from '../services/clinics-encryption.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../../../infrastructure/security/roles.decorator';
+import { isValidPhoneNumber, formatPhoneNumber } from '../../../common/validators/phone.validator';
 import { COLUMN_MAPPINGS, VALID_STATUSES, SOURCE_VALUES, normalizeStatus, looksLikeSource, looksLikeStatus, normalizeLead } from '../helpers/leads.helpers';
 
 @Controller('api/leads')
@@ -68,16 +71,14 @@ export class LeadsController {
         const tv = this.utils.toValue.bind(this.utils);
         try {
             const body = normalizeLead(rawBody);
-            const name = tv(body.name); const phone = tv(body.phone);
-            if (!name || !phone) throw new HttpException({ success: false, error: 'name and phone are required' }, HttpStatus.BAD_REQUEST);
+            const name = tv(body.name); const rawPhone = tv(body.phone);
+            if (!name || !rawPhone) throw new HttpException({ success: false, error: 'name and phone are required' }, HttpStatus.BAD_REQUEST);
             
-            // Strict number format check (supports 10-15 digits, optional leading +)
-            const phoneStr = String(phone).trim();
-            const isValidPhone = /^\+?[1-9]\d{9,14}$/.test(phoneStr);
-            if (!isValidPhone) {
-                throw new HttpException({ success: false, error: 'Invalid phone number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
+            if (!isValidPhoneNumber(String(rawPhone).trim())) {
+                throw new HttpException({ success: false, error: 'Invalid phone number format' }, HttpStatus.BAD_REQUEST);
             }
-
+            
+            const phone = formatPhoneNumber(String(rawPhone).trim());
 
             const payload = this.utils.sanitizePayload({
                 name, phone, date_added: tv(body.date_added), status: normalizeStatus(tv(body.status)),
@@ -170,8 +171,10 @@ export class LeadsController {
                 if (existingData) existingData.forEach(row => existingPhones.add(row.phone));
             }
             for (const lead of normalizedLeads) {
-                const phone = tv(lead.phone); const name = tv(lead.name);
-                if (!name || !phone) { errors.push({ phone: phone || 'N/A', name: name || 'N/A', reason: 'Missing name or phone' }); continue; }
+                const rawPhone = tv(lead.phone); const name = tv(lead.name);
+                if (!name || !rawPhone) { errors.push({ phone: rawPhone || 'N/A', name: name || 'N/A', reason: 'Missing name or phone' }); continue; }
+                if (!isValidPhoneNumber(rawPhone)) { errors.push({ phone: rawPhone, name, reason: 'Invalid phone number format' }); continue; }
+                const phone = formatPhoneNumber(rawPhone);
                 if (existingPhones.has(phone)) { errors.push({ phone, name, reason: 'Duplicate - already exists in database' }); continue; }
                 if (validLeadsToInsert.find(l => l.phone === phone)) { errors.push({ phone, name, reason: 'Duplicate in batch' }); continue; }
                 validLeadsToInsert.push(this.utils.sanitizePayload({
@@ -237,8 +240,15 @@ export class LeadsController {
         try {
             const statusRaw = tv(body.status);
             const normalizedStatus = statusRaw === 'Contacted' ? 'Follow Up' : statusRaw;
+            
+            const phoneStr = tv(body.phone);
+            if (phoneStr !== undefined && phoneStr !== null && !isValidPhoneNumber(String(phoneStr).trim())) {
+                throw new HttpException({ success: false, error: 'Invalid phone number format' }, HttpStatus.BAD_REQUEST);
+            }
+            const cleanPhone = phoneStr !== undefined && phoneStr !== null ? formatPhoneNumber(String(phoneStr).trim()) : undefined;
+
             const updates = this.utils.sanitizePayload({
-                name: tv(body.name), phone: tv(body.phone), age: tv(body.age), gender: tv(body.gender),
+                name: tv(body.name), phone: cleanPhone, age: tv(body.age), gender: tv(body.gender),
                 source: tv(body.source), inquiry: tv(body.inquiry), problem: tv(body.problem),
                 treatment_doctor: tv(body.treatment_doctor) ?? tv(body.treatmentDoctor),
                 treatment_suggested: tv(body.treatment_suggested) ?? tv(body.treatmentSuggested),
@@ -270,6 +280,8 @@ export class LeadsController {
     }
 
     @Post(':id/re-engage')
+    @UseGuards(RolesGuard)
+    @Roles('admin', 'cro', 'front desk')
     async reEngage(@Param('id') id: string) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -296,13 +308,16 @@ export class LeadsController {
     }
 
     @Post(':id/convert')
-    async convertToPatient(@Param('id') id: string) {
+    @UseGuards(RolesGuard)
+    @Roles('admin', 'cro', 'front desk')
+    async convertToPatient(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
 
         const supabase = this.supabaseService.getClient();
         try {
+            const tv = this.utils.toValue.bind(this.utils);
             // 1. Fetch Lead
             const { data: lead, error: leadError } = await supabase
                 .from('sakhi_clinic_leads')
@@ -318,30 +333,54 @@ export class LeadsController {
                 throw new HttpException({ success: false, error: 'Lead is already converted' }, HttpStatus.BAD_REQUEST);
             }
 
-            // 2. Strict Phone Validation
-            const phoneStr = String(lead.phone || '').trim();
-            const isValidPhone = /^\+?[1-9]\d{9,14}$/.test(phoneStr);
-            if (!isValidPhone) {
-                throw new HttpException({ success: false, error: 'Invalid phone number format on lead. Please fix lead mobile before converting.' }, HttpStatus.BAD_REQUEST);
+            // 2. Strict Phone Validation (Prioritize body.mobile, fallback to lead.phone)
+            const mobileInput = tv(body.mobile) ?? tv(body.phone) ?? lead.phone;
+            const phoneStr = String(mobileInput || '').trim();
+            if (!isValidPhoneNumber(phoneStr)) {
+                throw new HttpException({ success: false, error: 'Invalid phone number format. Please fix the mobile number before converting.' }, HttpStatus.BAD_REQUEST);
+            }
+            const cleanPhone = formatPhoneNumber(phoneStr);
+
+            // Ensure age is provided or can be parsed
+            const ageStr = String(tv(body.age) ?? lead.age ?? '').trim();
+            if (!ageStr || isNaN(parseInt(ageStr, 10))) {
+                throw new HttpException({ success: false, error: 'A valid numeric age is required for patient registration.' }, HttpStatus.BAD_REQUEST);
             }
 
             // 3. Decrypt problem and prep data
             const decryptedProblem = this.encryption.decrypt(lead.problem);
-            const uhid = await this.utils.generateUhid(supabase);
+            const uhid = tv(body.uhid) || await this.utils.generateUhid(supabase);
             const rawPin = Math.floor(1000 + Math.random() * 9000).toString();
             const pin_hash = await bcrypt.hash(rawPin, 10);
-            const registration_date = new Date().toISOString().slice(0, 10);
+            const registration_date = tv(body.registration_date) || tv(body.date) || new Date().toISOString().slice(0, 10);
 
             const patientPayload = this.utils.sanitizePayload({
                 uhid, 
-                name: lead.name, 
+                name: tv(body.name) || lead.name, 
                 mobile: phoneStr,
-                marital_status: 'Unknown', // Avoid false assumption
-                gender: lead.gender || 'Unknown',
-                age: lead.age,
-                emergency_contact_name: lead.guardian_name,
+                relation: tv(body.relation),
+                marital_status: tv(body.marital_status) ?? tv(body.maritalStatus) ?? 'Married',
+                gender: tv(body.gender) || lead.gender || 'Female',
+                dob: tv(body.dob),
+                age: tv(body.age) || lead.age,
+                blood_group: tv(body.blood_group) ?? tv(body.bloodGroup),
+                aadhar: tv(body.aadhar),
+                email: tv(body.email),
+                house: tv(body.house),
+                street: tv(body.street) ?? tv(body.address),
+                area: tv(body.area),
+                city: tv(body.city),
+                district: tv(body.district),
+                state: tv(body.state),
+                postal_code: tv(body.postal_code) ?? tv(body.postalCode),
+                emergency_contact_name: tv(body.emergency_contact_name) || lead.guardian_name,
+                emergency_contact_phone: tv(body.emergency_contact_phone),
+                emergency_contact_relation: tv(body.emergency_contact_relation),
+                assigned_doctor_id: tv(body.assigned_doctor_id),
+                referral_doctor: tv(body.referral_doctor) ?? tv(body.referralDoctor),
+                hospital_address: tv(body.hospital_address) ?? tv(body.hospitalAddress),
                 registration_date,
-                status: 'ACTIVE',
+                status: tv(body.status) || 'ACTIVE',
                 pin_hash
             });
             

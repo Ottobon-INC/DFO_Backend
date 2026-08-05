@@ -1,5 +1,5 @@
 // Valid lead_status enum values from database
-export const VALID_STATUSES = ['New Inquiry', 'Follow Up', 'Converted', 'Not Interested', 'Lost'];
+export const VALID_STATUSES = ['New Inquiry', 'Contacted', 'Follow Up', 'Stalling - Sent to CRO', 'Converted', 'Not Interested', 'Lost'];
 
 // Common source values that might mistakenly be put into status field
 export const SOURCE_VALUES = ['Walk-In', 'Walk-in', 'Website', 'website', 'Referral', 'referral', 'Social Media', 'Phone Call'];
@@ -11,7 +11,9 @@ export function normalizeStatus(rawStatus: string | undefined | null): string {
     if (matchedStatus) return matchedStatus;
     const statusMap: Record<string, string> = {
         'new': 'New Inquiry', 'new inquiry': 'New Inquiry', 'inquiry': 'New Inquiry',
-        'contacted': 'Follow Up', 'follow up': 'Follow Up', 'followup': 'Follow Up', 'follow-up': 'Follow Up',
+        'contacted': 'Contacted', 'contact': 'Contacted',
+        'follow up': 'Follow Up', 'followup': 'Follow Up', 'follow-up': 'Follow Up',
+        'stalling': 'Stalling - Sent to CRO', 'stalling - sent to cro': 'Stalling - Sent to CRO', 'sent to cro': 'Stalling - Sent to CRO',
         'converted': 'Converted', 'won': 'Converted', 'closed': 'Converted',
         'not interested': 'Not Interested', 'notinterested': 'Not Interested',
         'lost': 'Lost', 'dead': 'Lost',
