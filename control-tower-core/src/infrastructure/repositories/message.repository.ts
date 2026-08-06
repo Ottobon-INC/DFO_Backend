@@ -49,7 +49,23 @@ export class MessageRepository {
             .select('*');
 
         if (thread && thread.user_id) {
-            query = query.eq('user_id', thread.user_id);
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(thread.user_id);
+            if (isUuid) {
+                query = query.eq('user_id', thread.user_id);
+            } else {
+                // If it is a phone number (not a UUID), resolve the user's UUID from sakhi_clinic_users
+                const { data: userLink } = await this.orgSupabase
+                    .from('sakhi_clinic_users')
+                    .select('id')
+                    .eq('mobile', thread.user_id)
+                    .maybeSingle();
+
+                if (userLink && userLink.id) {
+                    query = query.eq('user_id', userLink.id);
+                } else {
+                    query = query.eq('chat_id', threadId);
+                }
+            }
         } else {
             query = query.eq('chat_id', threadId);
         }

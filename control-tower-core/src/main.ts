@@ -34,7 +34,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3000;
   
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`[Janmasethu DFO] Control Tower Core is running on: http://localhost:${port}`);
 }
 

@@ -1,0 +1,197 @@
+=== FUNCTION ANALYSES ===
+
+--- _is_thread_human_locked ---
+def _is_thread_human_locked(phone_number: str) -> bool:
+    """Gap 10: Check if thread is locked to a human (operator or doctor)."""
+    try:
+        rows = await async_supabase_select(
+            "conversation_threads",
+            select="is_locked,ownership",
+            filters=f"user_id=eq.{phone_number}&domain=eq.janmasethu"
+        )
+        if rows and rows[0].get("is_locked") and rows[0].get("ownership") == "HUMAN":
+            return True
+        return False
+    except Exception:
+        return False
+
+
+
+
+--- classify_escalation_intent ---
+def classify_escalation_intent(message: str) -> bool:
+    """
+    Classify if the user is asking to speak to a doctor or operator.
+    """
+    normalized = message.lower().strip()
+    keywords = {
+        "speak to doctor", "talk to doctor", "connect to doctor", "call doctor",
+        "speak to operator", "human agent", "talk to support", "speak to support",
+        "doctor tho matladali", "doctor call", "doctor se baat", "baat karni hai",
+        "connect me", "speak to a human", "call me back", "request call"
+    }
+    if any(kw in normalized for kw in keywords):
+        return True
+    try:
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an intent classifier. Detect if the user is asking to speak to a doctor, "
+                        "speak to a human operator, request a call back from support, or escalate their chat to a real person.\n"
+                        "Return strictly either 'YES' or 'NO'."
+                    )
+                },
+                {"role": "user", "content": message}
+            ],
+            temperature=0.1,
+            max_tokens=5,
+        )
+        return "YES" in response.choices[0].message.content.strip().upper()
+    except Exception:
+        return False
+
+async 
+
+--- build_hospital_ai_system_prompt ---
+def build_hospital_ai_system_prompt(meta: Dict[str, Any]) -> str:
+    """Build a detailed, clinic-specific system prompt for Hospital AI."""
+    dept_str = ", ".join(meta.get("departments") or []) or "General"
+    faq_str  = "\n".join(
+        [f"Q: {f.get('q','')}\nA: {f.get('a','')}" for f in (meta.get("faqs") or []) if f.get("q")]
+    ) or "No FAQs available."
+
+    return (
+        f"You are the Virtual Assistant for *{meta['name']}*.\n"
+        f"Address: {meta.get('address','')}\n"
+        f"Phone: {meta.get('contact_phone','')}\n"
+        f"Working Hours: {meta.get('working_hours','')}\n"
+        f"Departments: {dept_str}\n"
+        f"Emergency Contact: {meta.get('emergency_contact','')}\n\n"
+        f"Frequently Asked Questions:\n{faq_str}\n\n"
+        "Your ONLY responsibilities:\n"
+        "- Appointment booking and rescheduling\n"
+        "- Patient registration\n"
+        "- Doctor availability and schedules\n"
+        "- Hospital working hours and timings\n"
+        "- Reports and documents\n"
+        "- Clinic FAQs and operational queries\n\n"
+        "STRICTLY DO NOT:\n"
+        "- Explain medical treatments or procedures\n"
+        "- Answer questions about IVF, PCOS, pregnancy, fertility\n"
+        "- Give medical diagnoses or health advice\n"
+        "- For medical knowledge questions, say: 'For detailed medical information, please ask Sakhi AI.'\n\n"
+        "Always be professional, warm, and concise."
+    )
+
+
+# ===========================================================================
+# GAP 8: PATIENT SYNC TO sakhi_clinic_patients
+# ===========================================================================
+
+async 
+
+--- route_conversation (first 100 lines) ---
+async def route_conversation(
+    user_id: str,
+    message: str,
+    phone_number: str,
+    user_profile: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """
+    Core Conversation Context Router.
+    Returns response payload if handled here, otherwise None (falls through to Sakhi AI).
+
+    Gap 10: If mode == "suppressed", the CALLER must NOT forward any text to WhatsApp.
+    Gap 13: Full state recovery from Supabase on every call — no in-memory dependency.
+    """
+    # 0. Check thread lock immediately — AI must be silent during human takeover
+    if await _is_thread_human_locked(phone_number):
+        return {"reply": "", "mode": SUPPRESSED_MODE}
+
+    msg        = message.strip()
+    if msg.lower() in ["cancel", "stop", "restart", "exit"]:
+        await update_user_context(user_id, {
+            "conversation_context": CONTEXT_SAKHI_AI,
+            "booking_stage": None,
+            "discovery_candidates": [],
+            "available_doctors": [],
+            "available_dates": [],
+            "available_slots": []
+        })
+        reply = "Okay, I have cancelled the active flow. Let me know how I can help you today!"
+        await save_sakhi_message(user_id, reply, lang)
+        return {"reply": reply, "mode": "flow_cancelled"}
+
+    chat_state = await get_user_context(user_id)
+    ctx        = chat_state.get("conversation_context") or CONTEXT_SAKHI_AI
+    lang       = user_profile.get("preferred_language") or "en"
+
+    # =======================================================================
+    # STATE: SAKHI_AI — Listen for treatment intent or location request
+    # =======================================================================
+    if ctx == CONTEXT_SAKHI_AI:
+        has_intent = await classify_treatment_intent(msg)
+        if not has_intent:
+            return None  # Fall through to Sakhi AI handler
+
+        await audit_log(user_id, "TREATMENT_INTENT_DETECTED", {"message": msg[:120]})
+
+        # Extract medical specialty (e.g. Fever -> General Medicine, IVF -> IVF & Fertility, Cancer -> Oncology & Cancer)
+        speciality = await extract_medical_speciality(msg)
+
+        # Try to use saved location from profile first
+        saved_location = user_profile.get("location")
+        if saved_location:
+            await update_user_context(user_id, {
+                "conversation_context": CONTEXT_LOCATION_CONFIRMATION,
+                "required_speciality": speciality
+            })
+            text_prompt = f"We have stored your location as: *{saved_location}*. Are you looking for hospitals here?"
+            interactive_payload = {
+                "type": "button",
+                "body": {"text": text_prompt},
+                "action": {
+                    "buttons": [
+                        {"type": "reply", "reply": {"id": "loc_yes", "title": "Yes"}},
+                        {"type": "reply", "reply": {"id": "loc_no", "title": "No, Enter Pincode"}}
+                    ]
+                }
+            }
+            payload = {
+                "reply": text_prompt,
+                "interactive": interactive_payload,
+                "mode": "location_confirmation"
+            }
+            await save_sakhi_message(user_id, payload["reply"], lang)
+            return payload
+
+        # If no location saved, ask for pincode directly
+        await update_user_context(user_id, {
+            "conversation_context": CONTEXT_HOSPITAL_DISCOVERY,
+            "required_speciality": speciality
+        })
+        reply = "Please enter your 6-digit pincode to find hospitals near you."
+        await save_sakhi_message(user_id, reply, lang)
+        return {"reply": reply, "mode": "location_request"}
+
+    # =======================================================================
+    # STATE: DISTRICT_SELECTION — Choose District / Branch (Location Picker)
+    # =======================================================================
+    elif ctx == CONTEXT_DISTRICT_SELECTION:
+        selected_district = None
+        selected_state = None
+        clean_msg = msg.replace("dist_", "").strip()
+
+        for state, dists in INDIA_STATES_DISTRICTS.items():
+            for d in dists:
+                if d.lower() == clean_msg.lower() or d.lower() in msg.lower():
+                    selected_district = d
+                    selected_state = state
+                    break
+            if selected_district:
+                break
+
+

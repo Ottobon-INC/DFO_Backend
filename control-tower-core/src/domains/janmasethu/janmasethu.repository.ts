@@ -9,6 +9,7 @@ import {
     DFOPatient, DFODoctor, DFOAppointment, DFOConsultation, JourneyStage,
     DFOPrescription, DFOMedicalReport, DFOAnalytics, ConsultationStatus, AppointmentStatus
 } from './dfo.types';
+import { decryptMessage } from './security.utils';
 
 @Injectable()
 export class JanmasethuRepository {
@@ -31,14 +32,17 @@ export class JanmasethuRepository {
             query = query.eq('clinic_id', user.clinic_id);
         }
 
-        if (user.role === JanmasethuUserRole.DOCTOR) {
-            query = query.eq('status', 'red');
+        if (user.role === JanmasethuUserRole.CRO) {
+            query = query.in('status', ['red', 'yellow']).is('assigned_user_id', null);
+        } else if (user.role === JanmasethuUserRole.DOCTOR) {
+            query = query.eq('status', 'red').eq('assigned_user_id', user.id);
         } else if (user.role === JanmasethuUserRole.NURSE) {
-            query = query.in('status', ['red', 'yellow']);
+            query = query.in('status', ['red', 'yellow']).eq('assigned_user_id', user.id);
         }
 
         const { data, error } = await query;
         if (error) throw error;
+        
         
         const threads = (data || []) as Thread[];
 
@@ -64,7 +68,10 @@ export class JanmasethuRepository {
             } as any;
         }));
 
-        return enrichedThreads;
+        // Remove strict filtering so that threads with [Decryption Error] or 'No messages yet' still appear in the dashboard for debugging
+        const validThreads = enrichedThreads;
+
+        return validThreads;
     }
 
     async findThreadById(id: string, user?: JanmasethuUserContext): Promise<Thread | null> {
@@ -114,17 +121,17 @@ export class JanmasethuRepository {
             id: String(row.id),
             thread_id: row.chat_id || '',
             sender_id: row.user_id || '',
-            sender_type: row.message_type === 'user' ? 'USER' : (row.message_type === 'sakhi' ? 'AI' : 'HUMAN'),
-            content: row.message_text || '',
+            sender_type: row.role === 'user' ? 'USER' : (row.role === 'sakhi' ? 'AI' : 'HUMAN'),
+            content: decryptMessage(row.user_id, row.message_content),
             created_at: new Date(row.created_at),
         };
     }
 
     async findMessageById(id: string): Promise<Message | null> {
-        // Since id is an integer/serial in sakhi_conversations_new, parse it if possible, otherwise use string match
+        // Since id is an integer/serial in sakhi_encrypted_chats, parse it if possible, otherwise use string match
         const parsedId = parseInt(id, 10);
         const query = this.orgSupabase
-            .from('sakhi_conversations_new')
+            .from('sakhi_encrypted_chats')
             .select('*');
         
         const { data, error } = await (isNaN(parsedId) ? query.eq('id', id) : query.eq('id', parsedId)).maybeSingle();
@@ -134,47 +141,150 @@ export class JanmasethuRepository {
     }
 
     async createMessage(dto: Partial<Message>): Promise<Message> {
-        const { data, error } = await this.orgSupabase
-            .from('sakhi_conversations_new')
-            .insert([{
-                chat_id: dto.thread_id,
-                user_id: dto.sender_id,
-                message_text: dto.content,
-                message_type: dto.sender_type?.toLowerCase() || 'user',
-                created_at: new Date(),
-            }])
-            .select()
-            .single();
+        if (!dto.thread_id) {
+            throw new Error('thread_id is required to create a message');
+        }
+        // Fetch the thread to get the user's phone number
+        const thread = await this.findThreadById(dto.thread_id);
+        if (!thread) {
+            throw new Error(`Thread not found: ${dto.thread_id}`);
+        }
 
-        if (error) throw error;
-        return this.mapSakhiToMessage(data);
+        const phone = thread.user_id; // In Janmasethu, user_id is the phone number
+
+        // Call Python Backend's /expert/reply endpoint to handle encryption and WhatsApp dispatch
+        const pythonBackendUrl = process.env.WHATSAPP_BACKEND_URL || 'http://localhost:8081';
+        try {
+            const res = await fetch(`${pythonBackendUrl}/expert/reply`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    phone: phone,
+                    message: dto.content,
+                    chat_id: dto.thread_id,
+                    sender_type: dto.sender_type || 'HUMAN'
+                })
+            });
+            const result = await res.json();
+            if (result.status === 'error') {
+                this.logger.error(`Failed to send reply to Whatsapp backend: ${result.message}`);
+            }
+        } catch (err) {
+            this.logger.error(`Error communicating with Whatsapp backend: ${err.message}`);
+        }
+
+        // Return a localized representation of the message so the UI can optimistically update
+        return {
+            id: 'temp-' + Date.now(),
+            thread_id: dto.thread_id || '',
+            sender_id: dto.sender_id || '',
+            sender_type: dto.sender_type || 'HUMAN',
+            content: dto.content || '',
+            created_at: new Date(),
+        };
     }
 
     async findMessagesByThreadId(threadId: string): Promise<Message[]> {
         const thread = await this.findThreadById(threadId);
         let query = this.orgSupabase
-            .from('sakhi_conversations_new')
+            .from('sakhi_encrypted_chats')
             .select('*');
-        
+
         if (thread && thread.user_id) {
-            query = query.eq('user_id', thread.user_id);
+            const rawUserId = thread.user_id;
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUserId);
+
+            if (isUuid) {
+                // Already a UUID â€” query directly
+                query = query.eq('user_id', rawUserId);
+            } else {
+                // It's a phone number â€” normalize by stripping leading +91 or 91 to get 10-digit
+                let normalizedPhone = rawUserId.replace(/^\+91/, '').replace(/^91/, '');
+                // Also support full number with country code (10+ digits starting with 91)
+                const phoneVariants = Array.from(new Set([
+                    rawUserId,            // original (e.g. "+917392123669")
+                    rawUserId.replace(/^\+/, ''), // without + (e.g. "917392123669")
+                    normalizedPhone,       // 10-digit (e.g. "7392123669")
+                ]));
+
+                // Resolve via sakhi_users.phone_number -> sakhi_users.user_id
+                let resolvedUuid: string | null = null;
+                const crypto = require('crypto');
+                const pepper = process.env.BLIND_INDEX_PEPPER || 'default_secret_pepper';
+                for (const phoneVariant of phoneVariants) {
+                    const hashedPhone = crypto.createHmac('sha256', pepper).update(phoneVariant).digest('hex');
+                    const { data: userRow } = await this.orgSupabase
+                        .from('sakhi_users')
+                        .select('user_id')
+                        .eq('phone_number', hashedPhone)
+                        .maybeSingle();
+                    if (userRow?.user_id) {
+                        resolvedUuid = userRow.user_id;
+                        break;
+                    }
+                }
+
+                if (resolvedUuid) {
+                    query = query.eq('user_id', resolvedUuid);
+                } else {
+                    // Final fallback: try chat_id = threadId
+                    query = query.eq('chat_id', threadId);
+                }
+            }
         } else {
             query = query.eq('chat_id', threadId);
         }
 
         const { data, error } = await query.order('created_at', { ascending: true });
-        if (error) throw error;
+        if (error) {
+            // Gracefully handle missing table error for new deployments
+            if (error.code === 'PGRST205' || error.message.includes('find the table')) {
+                this.logger.warn(`Encrypted table not found or missing from schema cache: ${error.message}`);
+                return [];
+            }
+            throw error;
+        }
         return (data || []).map(row => this.mapSakhiToMessage(row));
     }
 
     async findRecentMessages(threadId: string, limit: number): Promise<Message[]> {
         const thread = await this.findThreadById(threadId);
         let query = this.orgSupabase
-            .from('sakhi_conversations_new')
-            .select('*');
+            .from('sakhi_encrypted_chats')
+            .select('*')
+            .order('created_at', { ascending: false });
 
         if (thread && thread.user_id) {
-            query = query.eq('user_id', thread.user_id);
+            const rawUserId = thread.user_id;
+            const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawUserId);
+            if (isUuid) {
+                query = query.eq('user_id', rawUserId);
+            } else {
+                let normalizedPhone = rawUserId.replace(/^\+91/, '').replace(/^91/, '');
+                const phoneVariants = Array.from(new Set([rawUserId, rawUserId.replace(/^\+/, ''), normalizedPhone]));
+
+                let resolvedUuid: string | null = null;
+                const crypto = require('crypto');
+                const pepper = process.env.BLIND_INDEX_PEPPER || 'default_secret_pepper';
+                for (const phoneVariant of phoneVariants) {
+                    const hashedPhone = crypto.createHmac('sha256', pepper).update(phoneVariant).digest('hex');
+                    const { data: userRow } = await this.orgSupabase
+                        .from('sakhi_users')
+                        .select('user_id')
+                        .eq('phone_number', hashedPhone)
+                        .maybeSingle();
+                    if (userRow?.user_id) {
+                        resolvedUuid = userRow.user_id;
+                        break;
+                    }
+                }
+
+                if (resolvedUuid) {
+                    query = query.eq('user_id', resolvedUuid);
+                } else {
+                    query = query.eq('chat_id', threadId);
+                }
+            }
         } else {
             query = query.eq('chat_id', threadId);
         }
@@ -182,7 +292,13 @@ export class JanmasethuRepository {
         const { data, error } = await query
             .order('created_at', { ascending: false })
             .limit(limit);
-        if (error) throw error;
+        if (error) {
+            if (error.code === 'PGRST205' || error.message.includes('find the table')) {
+                this.logger.warn(`Encrypted table not found or missing from schema cache: ${error.message}`);
+                return [];
+            }
+            throw error;
+        }
         return (data || []).map(row => this.mapSakhiToMessage(row));
     }
 
@@ -590,7 +706,7 @@ export class JanmasethuRepository {
 
         const activeConversations = (threads || []).filter(t => t.ownership === 'HUMAN').length;
 
-        this.logger.log(`📊 Analytics refreshed | Patients: ${totalPatients} | Human Threads: ${activeConversations} | Risk: [R:${riskDistribution.RED} Y:${riskDistribution.YELLOW} G:${riskDistribution.GREEN}]`);
+        this.logger.log(`ðŸ“Š Analytics refreshed | Patients: ${totalPatients} | Human Threads: ${activeConversations} | Risk: [R:${riskDistribution.RED} Y:${riskDistribution.YELLOW} G:${riskDistribution.GREEN}]`);
 
         return {
             risk_distribution: riskDistribution,

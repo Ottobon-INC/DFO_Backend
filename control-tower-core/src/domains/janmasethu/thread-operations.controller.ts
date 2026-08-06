@@ -102,7 +102,7 @@ export class ThreadOperationsController {
         const reply = await this.repo.replyToThread(id, user.role, user.id, body.message);
 
         // Dispatch to patient external channel
-        await this.dispatchService.dispatchResponse(thread.channel, thread.user_id, body.message);
+        if (user.role === 'CRO' || user.role === 'ADMIN') { await this.dispatchService.dispatchResponse(thread.channel, thread.user_id, body.message); }
 
         return { success: true, data: reply };
     }
