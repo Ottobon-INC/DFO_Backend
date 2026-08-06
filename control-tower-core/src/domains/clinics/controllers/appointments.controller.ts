@@ -13,7 +13,7 @@ import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
 export class AppointmentsController {
     private readonly logger = new Logger(AppointmentsController.name);
     private readonly allowedTypes = ['Consultation', 'Follow-up', 'Procedure', 'Emergency', 'Scan', 'Surgery', 'Camp'];
-    private readonly allowedStatuses = ['Scheduled', 'Arrived', 'Checked-In', 'Completed', 'Canceled', 'Expected'];
+    private readonly allowedStatuses = ['Scheduled', 'Arrived', 'Checked-In', 'In-Consultation', 'Completed', 'Canceled', 'Expected'];
 
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
@@ -464,7 +464,16 @@ export class AppointmentsController {
 
             const timestamp = new Date().toISOString();
             const cancellationReason = body?.cancellation_reason ?? body?.reason ?? 'Cancelled by frontdesk';
-            const payload = this.utils.sanitizePayload({
+            
+            let token_number: string | undefined = undefined;
+            if (status === 'Checked-In') {
+                const { data: currentAppt } = await supabase.from('sakhi_clinic_appointments').select('token_number').eq('id', id).single();
+                if (!currentAppt?.token_number && appointment.doctor_id) {
+                    token_number = await this.generateSmartToken(supabase, clinic_id, appointment.doctor_id, appointment.appointment_date);
+                }
+            }
+
+            const payload: any = this.utils.sanitizePayload({
                 status,
                 cancellation_reason: status === 'Canceled' ? cancellationReason : undefined,
                 cancelled_at: status === 'Canceled' ? timestamp : undefined,
@@ -472,6 +481,10 @@ export class AppointmentsController {
                 checked_in_at: status === 'Checked-In' ? timestamp : undefined,
                 completed_at: status === 'Completed' ? timestamp : undefined,
             });
+
+            if (token_number) {
+                payload.token_number = token_number;
+            }
 
             const { data, error } = await supabase.from('sakhi_clinic_appointments').update(payload).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') {
@@ -501,4 +514,115 @@ export class AppointmentsController {
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+    @Post('walk-in-express')
+    async walkInExpress(@Body() body: any) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            const { name, phone, doctor_id, gender, visit_reason } = body;
+            if (!name || !phone || !doctor_id) {
+                throw new HttpException({ success: false, error: 'Name, phone, and doctor_id are required' }, HttpStatus.BAD_REQUEST);
+            }
+
+            // 1. Resolve or Create Patient
+            let patient_id;
+            // Exact match on mobile and name (case insensitive)
+            const { data: existingPatient } = await supabase.from('sakhi_clinic_patients')
+                .select('id')
+                .eq('mobile', phone)
+                .ilike('name', name)
+                .eq('clinic_id', clinic_id)
+                .maybeSingle();
+            
+            if (existingPatient?.id) {
+                patient_id = existingPatient.id;
+            } else {
+                const { data: newPatient, error: patientError } = await supabase.from('sakhi_clinic_patients').insert([{
+                    clinic_id,
+                    name,
+                    mobile: phone,
+                    gender: gender || 'Unknown',
+                    status: 'Active'
+                }]).select('id').single();
+                if (patientError) throw patientError;
+                patient_id = newPatient.id;
+            }
+
+            // 2. Determine Token Logic (Smart Tokens)
+            const today = new Date();
+            const localDateStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+            const currentTimeStr = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().split('T')[1].slice(0, 5);
+
+            const tokenNumber = await this.generateSmartToken(supabase, clinic_id, doctor_id, localDateStr);
+
+            // 3. Create Appointment and Check-In
+            const payload = {
+                clinic_id,
+                patient_id,
+                doctor_id,
+                appointment_date: localDateStr,
+                start_time: currentTimeStr,
+                type: 'Consultation',
+                status: 'Checked-In',
+                visit_reason: visit_reason || 'Walk-in',
+                token_number: tokenNumber,
+                checked_in_at: new Date().toISOString(),
+                patient_name_snapshot: name,
+                patient_phone_snapshot: phone
+            };
+
+            const { data: appointment, error: appointmentError } = await supabase.from('sakhi_clinic_appointments').insert([payload]).select().single();
+            if (appointmentError) throw appointmentError;
+
+            // Trigger events
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_CREATED, new AppointmentEvent(
+                clinic_id, actor_id, appointment.id, { action: 'walk_in_express' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return { success: true, data: appointment, token: tokenNumber };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/v1/clinics/appointments/walk-in-express`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    private async generateSmartToken(supabase: any, clinic_id: string, doctor_id: string, dateStr: string): Promise<string> {
+        // Check how many doctors in clinic
+        const { count: doctorCount } = await supabase.from('sakhi_clinic_users')
+            .select('id', { count: 'exact', head: true })
+            .eq('clinic_id', clinic_id).eq('role', 'Doctor');
+
+        let prefix = 'T-';
+        if (doctorCount && doctorCount > 1 && doctor_id) {
+            // Get doctor name for prefix
+            const { data: doctor } = await supabase.from('sakhi_clinic_users').select('first_name, last_name').eq('id', doctor_id).single();
+            if (doctor && doctor.first_name) {
+                let init = doctor.first_name.charAt(0).toUpperCase();
+                if (doctor.last_name) {
+                    init += doctor.last_name.charAt(0).toUpperCase();
+                } else {
+                    init = doctor.first_name.substring(0, 3).toUpperCase();
+                }
+                prefix = init + '-';
+            }
+        }
+
+        // Count today's active appointments to determine queue number
+        const { count: appointmentsCount } = await supabase.from('sakhi_clinic_appointments')
+            .select('id', { count: 'exact', head: true })
+            .eq('clinic_id', clinic_id)
+            .eq('appointment_date', dateStr)
+            .not('token_number', 'is', null);
+        
+        // Note: For extreme concurrency, we might want to check if the generated token already exists in a retry loop.
+        // Or simply rely on the count of appointments that ALREADY have a token today.
+        const nextQueueNumber = (appointmentsCount || 0) + 1;
+        return `${prefix}${nextQueueNumber}`;
+    }
 }
+
