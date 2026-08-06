@@ -1,10 +1,13 @@
 import { Controller, Get, Query, UseGuards, Req, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../../../infrastructure/security/roles.decorator';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 
 @Controller('api/control-tower')
-@UseGuards(ClinicsAuthGuard)
+@UseGuards(ClinicsAuthGuard, RolesGuard)
+@Roles('admin', 'cro', 'front desk')
 export class ControlTowerController {
     private readonly logger = new Logger(ControlTowerController.name);
 

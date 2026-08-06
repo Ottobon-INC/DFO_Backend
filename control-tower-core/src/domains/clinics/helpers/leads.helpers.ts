@@ -4,6 +4,14 @@ export const VALID_STATUSES = ['New Inquiry', 'Contacted', 'Follow Up', 'Stallin
 // Common source values that might mistakenly be put into status field
 export const SOURCE_VALUES = ['Walk-In', 'Walk-in', 'Website', 'website', 'Referral', 'referral', 'Social Media', 'Phone Call'];
 
+// Status groupings for dashboard metrics
+export const CONVERTED_STATUSES = ['Converted', 'Converted Patient', 'Converted - Active Patient'];
+export const LOST_STATUSES = ['Lost', 'Inactive', 'Dropped'];
+export const NOT_INTERESTED_STATUSES = ['Not Interested'];
+export const CRO_QUEUE_STATUS = 'Stalling - Sent to CRO';
+export const FIRST_CONSULT_STATUSES = ['Contacted'];
+export const FOLLOW_UP_STATUSES = ['Stalling - Sent to CRO', 'Follow Up'];
+
 export function normalizeStatus(rawStatus: string | undefined | null): string {
     if (!rawStatus) return 'New Inquiry';
     const trimmed = rawStatus.trim();

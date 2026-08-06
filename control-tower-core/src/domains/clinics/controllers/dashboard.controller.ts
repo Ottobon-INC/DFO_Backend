@@ -1,14 +1,15 @@
 import { Controller, Get, UseGuards, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
+import { RolesGuard } from '../guards/roles.guard';
+import { Roles } from '../../../infrastructure/security/roles.decorator';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
-
-const CONVERTED_STATUSES = ['Converted Patient', 'Converted - Active Patient'];
-const LOST_STATUSES = ['Lost', 'Inactive', 'Dropped'];
-const CRO_QUEUE_STATUS = 'Stalling - Sent to CRO';
+import { CONVERTED_STATUSES, LOST_STATUSES, NOT_INTERESTED_STATUSES, CRO_QUEUE_STATUS, FIRST_CONSULT_STATUSES, FOLLOW_UP_STATUSES, normalizeStatus } from '../helpers/leads.helpers';
 
 @Controller('api/dashboard')
-@UseGuards(ClinicsAuthGuard)
+@UseGuards(ClinicsAuthGuard, RolesGuard)
+@Roles('admin', 'cro')
+
 export class DashboardController {
     private readonly logger = new Logger(DashboardController.name);
 
@@ -70,12 +71,31 @@ export class DashboardController {
                 .select('id, status, date_added, created_at')
                 .eq('clinic_id', clinic_id);
             if (leadsError) throw leadsError;
+            const startOfMonth = new Date();
+            startOfMonth.setUTCDate(1); startOfMonth.setUTCHours(0, 0, 0, 0);
+            const startOfMonthISO = startOfMonth.toISOString();
+            
+            // 1. Cohort Time-Window: Only look at leads generated this month
+            const leadsInMonth = (leads ?? []).filter(l => { 
+                const d = l.date_added || l.created_at; 
+                return d ? new Date(d).toISOString() >= startOfMonthISO : false; 
+            });
 
-            const totalLeads = leads?.length ?? 0;
-            const convertedCount = (leads ?? []).filter(l => CONVERTED_STATUSES.includes(l.status || '')).length;
-            const croQueue = (leads ?? []).filter(l => (l.status || '') === CRO_QUEUE_STATUS);
+            // 2. Normalize and Map Statuses
+            const normalizedLeads = leadsInMonth.map(l => ({
+                ...l,
+                normalizedStatus: normalizeStatus(l.status)
+            }));
+
+            const totalLeads = normalizedLeads.length;
+            const convertedCount = normalizedLeads.filter(l => CONVERTED_STATUSES.includes(l.normalizedStatus)).length;
+            const croQueue = normalizedLeads.filter(l => l.normalizedStatus === CRO_QUEUE_STATUS);
             const croQueueCount = croQueue.length;
-            const lostCount = (leads ?? []).filter(l => LOST_STATUSES.includes(l.status || '')).length;
+            
+            // 3. Include Not Interested in Churn Rate
+            const lostCount = normalizedLeads.filter(l => 
+                LOST_STATUSES.includes(l.normalizedStatus) || NOT_INTERESTED_STATUSES.includes(l.normalizedStatus)
+            ).length;
 
             const conversionRate = totalLeads ? Number(((convertedCount / totalLeads) * 100).toFixed(2)) : 0;
             const croSuccessRate = croQueueCount ? Number(((convertedCount / croQueueCount) * 100).toFixed(2)) : 0;
@@ -107,16 +127,21 @@ export class DashboardController {
                 if (!Number.isFinite(avgTimeToConvertDays)) avgTimeToConvertDays = 0;
             }
 
-            // Funnel (month-to-date)
-            const startOfMonth = new Date();
-            startOfMonth.setUTCDate(1); startOfMonth.setUTCHours(0, 0, 0, 0);
-            const startOfMonthISO = startOfMonth.toISOString();
-            const leadsInMonth = (leads ?? []).filter(l => { const d = l.date_added || l.created_at; return d ? new Date(d).toISOString() >= startOfMonthISO : false; });
+            // Funnel (Cumulative Math)
+            // Note: leadsInMonth is already cohort-filtered
+            const strictConverted = convertedCount;
+            const strictFollowUp = normalizedLeads.filter(l => FOLLOW_UP_STATUSES.includes(l.normalizedStatus)).length;
+            const strictFirstConsult = normalizedLeads.filter(l => FIRST_CONSULT_STATUSES.includes(l.normalizedStatus)).length;
+
+            const cumulativeConverted = strictConverted;
+            const cumulativeFollowUp = strictFollowUp + cumulativeConverted;
+            const cumulativeFirstConsult = strictFirstConsult + cumulativeFollowUp;
+
             const funnel = {
-                newLeads: leadsInMonth.length,
-                firstConsult: leadsInMonth.filter(l => ['Consultation Done', 'Visited'].includes(l.status || '')).length,
-                followUp: leadsInMonth.filter(l => ['Stalling - Sent to CRO', 'Follow Up'].includes(l.status || '')).length,
-                converted: leadsInMonth.filter(l => ['Converted', 'Converted Patient', 'Converted - Active Patient'].includes(l.status || '')).length,
+                newLeads: totalLeads,
+                firstConsult: cumulativeFirstConsult,
+                followUp: cumulativeFollowUp,
+                converted: cumulativeConverted,
             };
 
             // Intervention queue
