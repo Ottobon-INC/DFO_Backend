@@ -100,7 +100,7 @@ export class QMSQueueController {
             .eq('doctor_id', doctorId)
             .gte('appointment_date', date + 'T00:00:00Z')
             .lte('appointment_date', date + 'T23:59:59Z')
-            .or(	oken_number.ilike.%\%,patient.name.ilike.%\%,patient.mobile.ilike.%\%);
+            .or(`token_number.ilike.%${query}%,patient.name.ilike.%${query}%,patient.mobile.ilike.%${query}%`);
             
         if (error) throw error;
         return data;

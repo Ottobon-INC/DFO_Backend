@@ -36,7 +36,8 @@ export class JanmasethuContextService {
 
         let patientId = thread.metadata?.patient_id;
         if (!patientId && thread.user_id) {
-            patientId = await this.repository.findPatientIdByPhone(thread.user_id);
+            const patient = await this.repository.findDFOPatientByPhone(thread.user_id);
+            if (patient) patientId = patient.id;
         }
 
         let riskLogs: JanmasethuRiskLog[] = [];
