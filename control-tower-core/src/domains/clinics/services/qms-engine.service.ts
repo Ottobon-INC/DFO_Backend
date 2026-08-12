@@ -166,7 +166,7 @@ export class QmsEngineService {
     @Cron(CronExpression.EVERY_MINUTE)
     async sweepOrphanedAppointments() {
         this.logger.debug('Running sweeper for orphaned tokenless appointments...');
-        const supabase = this.supabaseService.getAdminClient ? this.supabaseService.getAdminClient() : this.supabaseService.getClient();
+        const supabase = (this.supabaseService as any).getAdminClient ? (this.supabaseService as any).getAdminClient() : this.supabaseService.getClient();
         
         const { data: orphans } = await supabase
             .from('sakhi_clinic_appointments')
@@ -180,9 +180,9 @@ export class QmsEngineService {
         for (const orphan of orphans) {
             try {
                 await this.enqueuePatient(orphan.clinic_id, orphan.id);
-                this.logger.log(Sweeper successfully recovered and enqueued appointment \);
+                this.logger.log(`Sweeper successfully recovered and enqueued appointment ${orphan.id}`);
             } catch (err) {
-                this.logger.error(Sweeper failed for appointment \: \);
+                this.logger.error(`Sweeper failed for appointment ${orphan.id}: ${err.message}`);
             }
         }
     }

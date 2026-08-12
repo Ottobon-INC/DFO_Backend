@@ -9,7 +9,11 @@ import { RedisCacheService } from 'src/infrastructure/cache/redis-cache.service'
   providers: [
     {
       provide: 'REDIS_CLIENT',
-      useFactory: (configService: ConfigService) => {
+      useFactory: (configService: ConfigService, mockClient?: any) => {
+        if (process.env.NODE_ENV !== 'production' && mockClient) {
+          return mockClient;
+        }
+
         const host = configService.get<string>('REDIS_HOST', 'localhost');
         const port = configService.get<number>('REDIS_PORT', 6379);
         const password = configService.get<string>('REDIS_PASSWORD');
@@ -29,7 +33,7 @@ import { RedisCacheService } from 'src/infrastructure/cache/redis-cache.service'
           },
         });
       },
-      inject: [ConfigService],
+      inject: [ConfigService, { token: 'REDIS_MOCK_CLIENT', optional: true }],
     },
     RedisCacheService,
   ],

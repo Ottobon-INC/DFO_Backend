@@ -15,9 +15,13 @@ import { HealthController } from './api/health.controller';
 import { TenantInterceptor } from './infrastructure/interceptors/tenant.interceptor';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import configuration from './config/configuration';
+import { InMemoryRedisModule } from './infrastructure/in-memory-redis.module';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 @Module({
   imports: [
+    ...(isProduction ? [] : [InMemoryRedisModule]),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],

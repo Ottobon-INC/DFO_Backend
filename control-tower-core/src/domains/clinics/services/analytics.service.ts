@@ -102,14 +102,14 @@ export class AnalyticsService {
             }
         });
 
-        const peakHour = Object.keys(hoursDistribution).reduce((a, b) => hoursDistribution[a] > hoursDistribution[b] ? a : b, null);
+        const peakHour = Object.keys(hoursDistribution).reduce((a: string | null, b: string) => (a === null || hoursDistribution[a] < hoursDistribution[b]) ? b : a, null as string | null);
 
         return {
             total_appointments: total,
             no_show_rate: total > 0 ? ((noShows / total) * 100).toFixed(2) + '%' : '0%',
             walk_in_ratio: total > 0 ? ((walkIns / total) * 100).toFixed(2) + '%' : '0%',
             whatsapp_ratio: total > 0 ? ((whatsapp / total) * 100).toFixed(2) + '%' : '0%',
-            peak_hour: peakHour ? \:00 : 'N/A'
+            peak_hour: peakHour ? `${peakHour}:00` : 'N/A'
         };
     }
 
@@ -129,7 +129,7 @@ export class AnalyticsService {
 
         let csv = 'Token,Date,Time,Status,Source,DoctorID\\n';
         data.forEach(row => {
-            csv += \,\,\,\,\,\\\n;
+            csv += `${row.token_number},${row.appointment_date},${row.appointment_time},${row.queue_status},${row.source},${row.doctor_id}\n`;
         });
         
         return csv;

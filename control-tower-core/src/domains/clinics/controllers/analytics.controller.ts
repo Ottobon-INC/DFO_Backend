@@ -50,7 +50,7 @@ export class AnalyticsController {
         const csv = await this.analyticsService.generateExport(tenantId, startDate, endDate);
         
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', ttachment; filename="queue_export_\_to_\.csv");
+        res.setHeader('Content-Disposition', `attachment; filename="queue_export_${startDate}_to_${endDate}.csv"`);
         res.send(csv);
     }
 }

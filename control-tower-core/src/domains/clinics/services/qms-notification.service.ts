@@ -40,7 +40,7 @@ export class QmsNotificationService {
 
     @OnEvent('queue.recalculated')
     async handleQueueRecalculated(payload: { tenantId: string, doctorId: string, appointmentId: string, active_queue: any[] }) {
-        this.logger.log(Evaluating notifications for queue recalculation);
+        this.logger.log(`Evaluating notifications for queue recalculation`);
         
         const supabase = this.supabaseService.getClient();
         
@@ -82,7 +82,7 @@ export class QmsNotificationService {
                         await supabase.from('qms_notifications_outbox').insert({
                             tenant_id: payload.tenantId,
                             appointment_id: pt.appointment_id,
-                            recipient_mobile: ptData.patient.mobile,
+                            recipient_mobile: Array.isArray(ptData.patient) ? (ptData.patient[0] as any)?.mobile : (ptData.patient as any).mobile,
                             notification_type: 'ALMOST_TURN',
                             priority: 2, // HIGH
                             message_payload: message,
@@ -90,7 +90,7 @@ export class QmsNotificationService {
                             next_attempt_at: this.calculateNextAttempt(config.quiet_hours, 2)
                         });
                         
-                        this.logger.log(Inserted ALMOST_TURN notification for \ into outbox.);
+                        this.logger.log(`Inserted ALMOST_TURN notification for ${pt.appointment_id} into outbox.`);
                     }
                 }
             }

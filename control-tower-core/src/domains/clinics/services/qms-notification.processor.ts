@@ -40,12 +40,12 @@ export class QmsNotificationProcessor {
                 return;
             }
 
-            this.logger.log(Processing \ notifications from outbox...);
+            this.logger.log(`Processing ${messages.length} notifications from outbox...`);
 
             for (const msg of messages) {
                 try {
                     // Simulate WhatsApp/SMS API Call
-                    this.logger.debug([WHATSAPP API] Sending to \: \);
+                    this.logger.debug(`[WHATSAPP API] Sending to ${msg.recipient_mobile}: ${msg.message_payload}`);
                     
                     // On Success:
                     await supabase
@@ -74,7 +74,7 @@ export class QmsNotificationProcessor {
             }
 
         } catch (e) {
-            this.logger.error(Error processing outbox: \);
+            this.logger.error(`Error processing outbox: ${e.message}`);
         } finally {
             this.isProcessing = false;
         }

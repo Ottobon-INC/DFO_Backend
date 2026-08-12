@@ -17,7 +17,7 @@ export class SlotEngineService {
     private minsToTime(m: number): string {
         const h = Math.floor(m / 60);
         const mins = m % 60;
-        return \:\;
+        return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
     }
 
     private isWithinBreak(timeStr: string, breaks: any[]): boolean {
@@ -47,7 +47,7 @@ export class SlotEngineService {
             .single();
 
         if (configErr && configErr.code !== 'PGRST116') {
-            throw new Error(Failed to fetch doctor schedule: \);
+            throw new Error(`Failed to fetch doctor schedule: ${configErr?.message}`);
         }
 
         // Schema: { working_hours: { start: '09:00', end: '17:00' }, breaks: [{start_time: '13:00', end_time: '14:00'}], max_per_slot: 5, slot_duration: 15 }
@@ -93,7 +93,7 @@ export class SlotEngineService {
         const nextSlotMins = targetMins + slotDuration;
         const nextSlotStr = this.minsToTime(nextSlotMins);
         
-        this.logger.log(Slot \ full (capacity \). Overflowing to \...);
+        this.logger.log(`Slot ${preferredTime} full (capacity ${maxCapacity}). Overflowing to ${nextSlotStr}...`);
         
         return this.findNextAvailableSlot(tenantId, doctorId, preferredDate, nextSlotStr, attempts + 1);
     }
