@@ -45,6 +45,7 @@ import { SchedulesController } from './controllers/schedules.controller';
 import { QMSConfigController } from './controllers/qms-config.controller';
 import { QMSQueueController } from './controllers/qms-queue.controller';
 import { AnalyticsController } from './controllers/analytics.controller';
+import { ClinicsController } from './controllers/clinics.controller';
 
 // Feature Modules
 import { AwsModule } from '../../infrastructure/aws/aws.module';
@@ -96,6 +97,7 @@ import { BullModule } from '@nestjs/bullmq';
         QMSConfigController,
         QMSQueueController,
         AnalyticsController,
+        ClinicsController,
     ],
     exports: [
         ClinicsSupabaseService,

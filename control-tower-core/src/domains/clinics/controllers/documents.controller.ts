@@ -585,8 +585,8 @@ export class DocumentsController {
 
             const payload = this.utils.sanitizePayload({
                 clinic_id, uhid, lead_id: tv(body.lead_id), name, relation: tv(body.relation), 
-                marital_status: tv(body?.marital_status) ?? tv(body?.maritalStatus) ?? 'Married', 
-                gender: tv(body?.gender) || 'Female',
+                marital_status: tv(body?.marital_status) ?? tv(body?.maritalStatus) ?? null, 
+                gender: tv(body?.gender) || null,
                 dob: tv(body.dob), age: tv(body.age), blood_group: tv(body.blood_group) ?? tv(body.bloodGroup),
                 aadhar: tv(body.aadhar), mobile, email: tv(body.email), house: tv(body.house),
                 street: tv(body.street) ?? tv(body.address), area: tv(body.area), city: tv(body.city),

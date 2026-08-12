@@ -66,9 +66,9 @@ export class PatientsController {
         try {
             const name = tv(body?.name);
             const mobile = tv(body?.mobile) ?? tv(body?.phone);
-            const marital_status = tv(body?.marital_status) ?? tv(body?.maritalStatus) ?? 'Married';
+            const marital_status = tv(body?.marital_status) ?? tv(body?.maritalStatus) ?? null;
             const registration_date = tv(body?.registration_date) || tv(body?.date) || new Date().toISOString().slice(0, 10);
-            const gender = tv(body?.gender) || 'Female';
+            const gender = tv(body?.gender) || null;
 
             if (!name || !mobile) {
                 throw new HttpException({ success: false, error: 'name and mobile (or phone) are required' }, HttpStatus.BAD_REQUEST);

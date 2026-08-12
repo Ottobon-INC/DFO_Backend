@@ -34,7 +34,22 @@ export class ClinicsUtilsService {
 
         if (error) throw error;
 
-        const nextNumber = (data?.length || 0) + 1;
+        let maxSequence = 0;
+        if (data && data.length > 0) {
+            for (const row of data) {
+                if (row.uhid) {
+                    const parts = row.uhid.split('-');
+                    if (parts.length === 3) {
+                        const seq = parseInt(parts[2], 10);
+                        if (!isNaN(seq) && seq > maxSequence) {
+                            maxSequence = seq;
+                        }
+                    }
+                }
+            }
+        }
+
+        const nextNumber = maxSequence + 1;
         const sequence = String(nextNumber).padStart(3, '0');
         return `JAN-${year}-${sequence}`;
     }
