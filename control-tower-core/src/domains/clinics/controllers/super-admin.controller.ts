@@ -1,7 +1,8 @@
-import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards, Req } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
+import { normalizeStatus } from '../helpers/leads.helpers';
 import { SuperAdminGuard } from '../guards/super-admin.guard';
 import { CreateClinicDto } from '../dto/create-clinic.dto';
 import { StaffCacheService } from '../services/staff-cache.service';
@@ -177,6 +178,258 @@ export class SuperAdminController {
             this.logger.error('GET /api/v1/superadmin/analytics', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
+    }
+
+    // =========================================================
+    // Per-Clinic Analytics Drill-down
+    // =========================================================
+    @Get('clinics/:id/analytics')
+    async getClinicAnalytics(@Param('id') id: string, @Query('period') period?: string) {
+        const supabase = this.supabaseService.getClient();
+        try {
+            // Validate clinic exists
+            const { data: clinic, error: clinicError } = await supabase
+                .from('clinics')
+                .select('id, name, created_at')
+                .eq('id', id)
+                .single();
+
+            if (clinicError?.code === 'PGRST116' || !clinic) {
+                throw new HttpException({ success: false, error: 'Clinic not found' }, HttpStatus.NOT_FOUND);
+            }
+            if (clinicError) throw clinicError;
+
+            const dateFilter = this.getDateFilter(period);
+
+            // Parallel fetch all data for this clinic
+            const results = await Promise.allSettled([
+                // 0: Leads (all for pipeline, filtered by date)
+                supabase.from('sakhi_clinic_leads')
+                    .select('status, source, date_added')
+                    .eq('clinic_id', id)
+                    .gte('date_added', dateFilter),
+                // 1: Patients count
+                supabase.from('sakhi_clinic_patients')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('clinic_id', id),
+                // 2: Appointments (filtered by date)
+                supabase.from('sakhi_clinic_appointments')
+                    .select('source, queue_status, appointment_date')
+                    .eq('clinic_id', id)
+                    .gte('appointment_date', dateFilter),
+                // 3: Staff count
+                supabase.from('sakhi_clinic_users')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('clinic_id', id)
+                    .eq('is_active', true),
+                // 4: All-time leads for total count
+                supabase.from('sakhi_clinic_leads')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('clinic_id', id),
+            ]);
+
+            // Extract data safely
+            const leads = results[0].status === 'fulfilled' && !results[0].value.error ? (results[0].value.data || []) : [];
+            const totalPatients = results[1].status === 'fulfilled' && !results[1].value.error ? (results[1].value.count || 0) : 0;
+            const appointments = results[2].status === 'fulfilled' && !results[2].value.error ? (results[2].value.data || []) : [];
+            const totalStaff = results[3].status === 'fulfilled' && !results[3].value.error ? (results[3].value.count || 0) : 0;
+            const totalLeadsAllTime = results[4].status === 'fulfilled' && !results[4].value.error ? (results[4].value.count || 0) : 0;
+
+            // Build lead pipeline
+            const leadPipeline: Record<string, number> = {};
+            const leadSources: Record<string, number> = {};
+            let convertedCount = 0;
+
+            leads.forEach((lead: any) => {
+                const status = normalizeStatus(lead.status);
+                leadPipeline[status] = (leadPipeline[status] || 0) + 1;
+                if (['Converted', 'Converted Patient', 'Converted - Active Patient'].includes(status)) {
+                    convertedCount++;
+                }
+
+                const source = this.normalizeSource(lead.source);
+                leadSources[source] = (leadSources[source] || 0) + 1;
+            });
+
+            // Build appointment source breakdown
+            const appointmentSources: Record<string, number> = {};
+            appointments.forEach((appt: any) => {
+                const source = this.normalizeSource(appt.source);
+                appointmentSources[source] = (appointmentSources[source] || 0) + 1;
+            });
+
+            const conversionRate = leads.length > 0 ? ((convertedCount / leads.length) * 100).toFixed(1) + '%' : '0%';
+
+            return {
+                success: true,
+                data: {
+                    clinic_id: clinic.id,
+                    clinic_name: clinic.name,
+                    period: period || 'all',
+                    overview: {
+                        total_leads: totalLeadsAllTime,
+                        total_patients: totalPatients,
+                        total_appointments: appointments.length,
+                        total_staff: totalStaff,
+                    },
+                    lead_pipeline: leadPipeline,
+                    lead_sources: leadSources,
+                    appointment_sources: appointmentSources,
+                    conversion_rate: conversionRate,
+                    leads_in_period: leads.length,
+                },
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`GET /api/v1/superadmin/clinics/${id}/analytics`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // =========================================================
+    // Enhanced Global Overview (with lead funnel data)
+    // =========================================================
+    @Get('analytics/overview')
+    async getAnalyticsOverview(@Query('period') period?: string) {
+        const supabase = this.supabaseService.getClient();
+        try {
+            const dateFilter = this.getDateFilter(period);
+
+            const results = await Promise.allSettled([
+                // 0: Active clinics
+                supabase.from('clinics').select('id, name, created_at').eq('is_active', true),
+                // 1: Total patients
+                supabase.from('sakhi_clinic_patients').select('*', { count: 'exact', head: true }),
+                // 2: All leads in period
+                supabase.from('sakhi_clinic_leads')
+                    .select('clinic_id, status, source, date_added')
+                    .gte('date_added', dateFilter),
+                // 3: All appointments in period
+                supabase.from('sakhi_clinic_appointments')
+                    .select('clinic_id, source, appointment_date')
+                    .gte('appointment_date', dateFilter),
+                // 4: Total leads all-time
+                supabase.from('sakhi_clinic_leads').select('*', { count: 'exact', head: true }),
+            ]);
+
+            const clinics = results[0].status === 'fulfilled' && !results[0].value.error ? (results[0].value.data || []) : [];
+            const totalPatients = results[1].status === 'fulfilled' && !results[1].value.error ? (results[1].value.count || 0) : 0;
+            const leads = results[2].status === 'fulfilled' && !results[2].value.error ? (results[2].value.data || []) : [];
+            const appointments = results[3].status === 'fulfilled' && !results[3].value.error ? (results[3].value.data || []) : [];
+            const totalLeadsAllTime = results[4].status === 'fulfilled' && !results[4].value.error ? (results[4].value.count || 0) : 0;
+
+            // Global lead source breakdown
+            const globalLeadSources: Record<string, number> = {};
+            let globalConverted = 0;
+
+            leads.forEach((lead: any) => {
+                const status = normalizeStatus(lead.status);
+                const source = this.normalizeSource(lead.source);
+                globalLeadSources[source] = (globalLeadSources[source] || 0) + 1;
+                if (['Converted', 'Converted Patient', 'Converted - Active Patient'].includes(status)) {
+                    globalConverted++;
+                }
+            });
+
+            const globalConversionRate = leads.length > 0 ? ((globalConverted / leads.length) * 100).toFixed(1) + '%' : '0%';
+
+            // Per-clinic summary
+            const clinicLeadCounts: Record<string, number> = {};
+            const clinicConvertedCounts: Record<string, number> = {};
+            const clinicAppointmentCounts: Record<string, number> = {};
+
+            leads.forEach((lead: any) => {
+                const status = normalizeStatus(lead.status);
+                if (lead.clinic_id) {
+                    clinicLeadCounts[lead.clinic_id] = (clinicLeadCounts[lead.clinic_id] || 0) + 1;
+                    if (['Converted', 'Converted Patient', 'Converted - Active Patient'].includes(status)) {
+                        clinicConvertedCounts[lead.clinic_id] = (clinicConvertedCounts[lead.clinic_id] || 0) + 1;
+                    }
+                }
+            });
+
+            appointments.forEach((appt: any) => {
+                if (appt.clinic_id) {
+                    clinicAppointmentCounts[appt.clinic_id] = (clinicAppointmentCounts[appt.clinic_id] || 0) + 1;
+                }
+            });
+
+            const clinicsSummary = clinics.map((clinic: any) => {
+                const cLeads = clinicLeadCounts[clinic.id] || 0;
+                const cConverted = clinicConvertedCounts[clinic.id] || 0;
+                const cAppointments = clinicAppointmentCounts[clinic.id] || 0;
+                return {
+                    id: clinic.id,
+                    name: clinic.name,
+                    leads: cLeads,
+                    appointments: cAppointments,
+                    conversion_rate: cLeads > 0 ? ((cConverted / cLeads) * 100).toFixed(1) + '%' : '0%',
+                };
+            });
+
+            return {
+                success: true,
+                data: {
+                    period: period || 'all',
+                    total_clinics: clinics.length,
+                    total_patients: totalPatients,
+                    total_leads: totalLeadsAllTime,
+                    total_appointments: appointments.length,
+                    global_lead_sources: globalLeadSources,
+                    global_conversion_rate: globalConversionRate,
+                    leads_in_period: leads.length,
+                    clinics_summary: clinicsSummary,
+                },
+            };
+        } catch (error: any) {
+            this.logger.error('GET /api/v1/superadmin/analytics/overview', error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // =========================================================
+    // Helper: Compute date filter from period param
+    // =========================================================
+    private getDateFilter(period?: string): string {
+        const now = new Date();
+        switch (period) {
+            case 'day':
+                now.setDate(now.getDate() - 1);
+                break;
+            case 'week':
+                now.setDate(now.getDate() - 7);
+                break;
+            case 'month':
+                now.setMonth(now.getMonth() - 1);
+                break;
+            case 'year':
+                now.setFullYear(now.getFullYear() - 1);
+                break;
+            default:
+                // All time - return a date far in the past
+                return '2000-01-01T00:00:00Z';
+        }
+        return now.toISOString();
+    }
+
+    // =========================================================
+    // Helper: Normalize Source (clean up CSV garbage)
+    // =========================================================
+    private normalizeSource(source: string | undefined | null): string {
+        if (!source) return 'Unknown';
+        const s = source.trim().toLowerCase();
+        
+        if (s.includes('walk')) return 'Walk-In';
+        if (s.includes('web')) return 'Website';
+        if (s.includes('whatsapp')) return 'WhatsApp';
+        if (s.includes('social') || s.includes('fb') || s.includes('insta') || s.includes('facebook') || s.includes('instagram')) return 'Social Media';
+        if (s.includes('refer')) return 'Referral';
+        if (s.includes('camp')) return 'Camp';
+        if (s.includes('practo')) return 'Practo';
+        if (s.includes('phone') || s.includes('call')) return 'Phone Call';
+        if (s.includes('online')) return 'Online';
+        
+        return 'Unknown';
     }
 
     @Delete('clinics/:id')
