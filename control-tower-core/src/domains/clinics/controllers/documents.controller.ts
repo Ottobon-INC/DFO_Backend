@@ -150,6 +150,66 @@ export class DocumentsController {
         }
     }
 
+    @Post('upload-unassigned')
+    async uploadUnassignedDocument(@Body() body: { name: string; base64: string; contentType?: string; document_type?: string }) {
+        const clinic_id = TenantContext.getClinicId();
+        const uploaded_by = TenantContext.getUserId();
+
+        if (!clinic_id || !uploaded_by) {
+            throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+        }
+
+        const { name, base64, contentType, document_type } = body;
+        if (!name || !base64) {
+            throw new HttpException({ success: false, error: 'name and base64 file data are required' }, HttpStatus.BAD_REQUEST);
+        }
+
+        try {
+            const buffer = Buffer.from(base64, 'base64');
+            const file_size = buffer.length;
+
+            const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
+            if (file_size > MAX_FILE_SIZE) {
+                throw new HttpException({ success: false, error: 'File size exceeds 25MB limit.' }, HttpStatus.PAYLOAD_TOO_LARGE);
+            }
+
+            const mime_type = contentType || 'application/octet-stream';
+            const s3Path = `clinics/${clinic_id}/unassigned/${Date.now()}-${name}`;
+            await this.s3Service.uploadFile(s3Path, buffer, mime_type);
+
+            const supabase = this.supabaseService.getClient();
+            const { data, error } = await supabase.from('sakhi_clinic_documents').insert([{
+                clinic_id,
+                patient_id: null,
+                name,
+                file_path: s3Path,
+                file_size,
+                mime_type,
+                uploaded_by,
+                status: 'unassigned'
+            }]).select().single();
+
+            if (error) {
+                this.logger.error('Database insertion error for unassigned document:', error);
+                throw new HttpException({ success: false, error: 'Database error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+
+            await this.eventsQueue.add(DFO_EVENTS.DOCUMENT_REGISTERED, new DocumentEvent(
+                clinic_id, uploaded_by, data.id,
+                { action: 'upload_unassigned_document', size: file_size, type: document_type || 'Uploaded', name: data.name }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return {
+                success: true,
+                data
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/v1/clinics/documents/upload-unassigned failed:`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
     @Get('unassigned')
     async getUnassignedDocuments(@Query('page') page: string = '1', @Query('limit') limit: string = '10') {
         const clinic_id = TenantContext.getClinicId();
@@ -597,7 +657,6 @@ export class DocumentsController {
                 emergency_contact_relation: tv(body.emergency_contact_relation),
                 assigned_doctor_id: tv(body.assigned_doctor_id),
                 referral_doctor: tv(body.referral_doctor) ?? tv(body.referralDoctor),
-                hospital_address: tv(body.hospital_address) ?? tv(body.hospitalAddress),
                 registration_date, status: tv(body.status),
                 pin_hash
             });
