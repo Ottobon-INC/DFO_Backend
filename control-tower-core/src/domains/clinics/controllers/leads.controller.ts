@@ -378,7 +378,6 @@ export class LeadsController {
                 emergency_contact_relation: tv(body.emergency_contact_relation),
                 assigned_doctor_id: tv(body.assigned_doctor_id),
                 referral_doctor: tv(body.referral_doctor) ?? tv(body.referralDoctor),
-                hospital_address: tv(body.hospital_address) ?? tv(body.hospitalAddress),
                 registration_date,
                 status: tv(body.status) || 'ACTIVE',
                 pin_hash

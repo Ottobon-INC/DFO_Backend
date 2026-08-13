@@ -55,6 +55,7 @@ export class StaffController {
 
             // Flatten the response slightly for convenience
             const staffList = data.map((item: any) => ({
+                id: item.user_id, // Map doctor/user ID explicitly to 'id' for frontend
                 assignment_id: item.id,
                 user_id: item.user_id,
                 role: item.role,

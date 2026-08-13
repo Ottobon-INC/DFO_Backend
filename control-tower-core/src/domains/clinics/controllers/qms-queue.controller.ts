@@ -126,7 +126,7 @@ export class QMSQueueController {
         if (!patientId) {
             const { data: existingPt } = await supabase
                 .from('sakhi_clinic_patients')
-                .select('id')
+                .select('id, assigned_doctor_id')
                 .eq('clinic_id', tenantId)
                 .eq('mobile', mobile)
                 .limit(1)
@@ -134,10 +134,13 @@ export class QMSQueueController {
 
             if (existingPt) {
                 patientId = existingPt.id;
+                if (!existingPt.assigned_doctor_id && doctor_id) {
+                    await supabase.from('sakhi_clinic_patients').update({ assigned_doctor_id: doctor_id }).eq('id', patientId);
+                }
             } else {
                 const { data: newPt, error: ptErr } = await supabase
                     .from('sakhi_clinic_patients')
-                    .insert({ clinic_id: tenantId, mobile, name, source: 'WALK_IN' })
+                    .insert({ clinic_id: tenantId, mobile, name, source: 'WALK_IN', assigned_doctor_id: doctor_id || null })
                     .select('id')
                     .single();
                     
