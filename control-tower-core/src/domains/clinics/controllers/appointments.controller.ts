@@ -28,7 +28,9 @@ export class AppointmentsController {
         @Query('date') date?: string,
         @Query('status') status?: string,
         @Query('patient_id') patientId?: string,
-        @Query('doctor_id') doctorId?: string
+        @Query('doctor_id') doctorId?: string,
+        @Query('start_date') startDate?: string,
+        @Query('end_date') endDate?: string
     ) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -45,6 +47,8 @@ export class AppointmentsController {
                 .eq('clinic_id', clinic_id);
 
             if (date) query = query.eq('appointment_date', date);
+            if (startDate) query = query.gte('appointment_date', startDate);
+            if (endDate) query = query.lte('appointment_date', endDate);
             if (status) query = query.eq('status', status);
             if (patientId && this.utils.isUuid(patientId)) query = query.eq('patient_id', patientId);
             if (doctorId && this.utils.isUuid(doctorId)) query = query.eq('doctor_id', doctorId);
