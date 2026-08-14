@@ -21,7 +21,7 @@ export class PatientsController {
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly utils: ClinicsUtilsService,
         @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
-    ) {}
+    ) { }
 
     @Get()
     async list(@Query('phone') phone?: string, @Query('q') q?: string, @Query('page') page = '1', @Query('limit') limit = '20') {
@@ -73,13 +73,13 @@ export class PatientsController {
             if (!name || !mobile) {
                 throw new HttpException({ success: false, error: 'name and mobile (or phone) are required' }, HttpStatus.BAD_REQUEST);
             }
-            
+
             // Strict number format check (supports 10-15 digits, optional leading +)
             const mobileStr = String(mobile).trim();
             if (!isValidPhoneNumber(mobileStr)) {
                 throw new HttpException({ success: false, error: 'Invalid mobile number format. Must be a valid 10-15 digit number.' }, HttpStatus.BAD_REQUEST);
             }
-            
+
             const cleanMobile = formatPhoneNumber(mobileStr);
 
             const { data: existing, error: existingError } = await supabase
@@ -137,6 +137,16 @@ export class PatientsController {
             const { data, error } = await supabase.from('sakhi_clinic_patients').select('*').eq('id', id).eq('clinic_id', clinic_id).single();
             if (error?.code === 'PGRST116' || !data) throw new HttpException({ success: false, error: 'Patient not found' }, HttpStatus.NOT_FOUND);
             if (error) throw error;
+
+            const { data: abhaData, error: abhaError } = await supabase
+                .from('patient_abha')
+                .select('abha_number, abha_address, verification_status, is_active, verified_at')
+                .eq('patient_id', id)
+                .eq('is_active', true)
+                .single();
+
+            data.abha = (!abhaError && abhaData) ? abhaData : null;
+
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
@@ -198,7 +208,7 @@ export class PatientsController {
             if (!body?.vital_type || !body?.value) {
                 throw new HttpException({ success: false, error: 'vital_type and value are required' }, HttpStatus.BAD_REQUEST);
             }
-            
+
             const payload = {
                 patient_id: id,
                 clinic_id: clinic_id,
@@ -210,7 +220,7 @@ export class PatientsController {
 
             const { data, error } = await supabase.from('sakhi_clinic_patient_vitals').insert(payload).select().single();
             if (error) throw error;
-            
+
             // Audit Log
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
                 clinic_id,
@@ -241,7 +251,7 @@ export class PatientsController {
                 .eq('id', vitalId)
                 .eq('patient_id', id); // Vitals table does not have clinic_id, isolated via patient_id which belongs to clinic
             if (error) throw error;
-            
+
             // Audit Log
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
                 clinic_id,
@@ -270,7 +280,7 @@ export class PatientsController {
             if (!body?.allergy_name) {
                 throw new HttpException({ success: false, error: 'allergy_name is required' }, HttpStatus.BAD_REQUEST);
             }
-            
+
             const payload = {
                 patient_id: id,
                 clinic_id,
@@ -282,7 +292,7 @@ export class PatientsController {
 
             const { data, error } = await supabase.from('sakhi_clinic_allergies').insert(payload).select().single();
             if (error) throw error;
-            
+
             // Audit Log
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
                 clinic_id,
@@ -323,7 +333,7 @@ export class PatientsController {
                 .eq('clinic_id', clinic_id)
                 .select().single();
             if (error) throw error;
-            
+
             // Audit Log
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
                 clinic_id,
@@ -355,7 +365,7 @@ export class PatientsController {
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id);
             if (error) throw error;
-            
+
             // Audit Log
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
                 clinic_id,
@@ -392,7 +402,7 @@ export class PatientsController {
                 .eq('clinic_id', clinic_id)
                 .eq('condition_name', body.condition_name)
                 .eq('status', 'ACTIVE');
-                
+
             if (existingConditions && existingConditions.length > 0) {
                 return { success: true, message: 'Patient already has an active condition with this name', data: existingConditions[0] };
             }
@@ -440,7 +450,7 @@ export class PatientsController {
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id);
             if (error) throw error;
-            
+
             // Audit Log
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
                 clinic_id,
@@ -473,7 +483,7 @@ export class PatientsController {
                 .eq('clinic_id', clinic_id)
                 .select().single();
             if (error) throw error;
-            
+
             // Audit Log
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_UPDATED, new PatientEvent(
                 clinic_id,
@@ -704,7 +714,7 @@ export class PatientsController {
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id)
                 .single();
-            
+
             if (fetchError || !originalNote) {
                 throw new HttpException({ success: false, error: 'Note not found' }, HttpStatus.NOT_FOUND);
             }
@@ -721,7 +731,7 @@ export class PatientsController {
             }
 
             const payload = this.utils.sanitizePayload({ subjective: body.subjective, objective: body.objective, assessment: body.assessment, plan: body.plan, updated_at: new Date().toISOString() });
-            
+
             const { data, error } = await supabase.from('sakhi_clinical_notes')
                 .update(payload)
                 .eq('id', noteId)
@@ -759,7 +769,7 @@ export class PatientsController {
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id)
                 .single();
-            
+
             if (fetchError || !originalNote) {
                 throw new HttpException({ success: false, error: 'Note not found' }, HttpStatus.NOT_FOUND);
             }
@@ -819,7 +829,7 @@ export class PatientsController {
         const supabase = this.supabaseService.getClient();
         try {
             if (!body?.treatment_name) throw new HttpException({ success: false, error: 'treatment_name is required' }, HttpStatus.BAD_REQUEST);
-            
+
             // Parent Validation
             if (this.utils.isUuid(body.parent_treatment_id)) {
                 const { data: parent, error: parentError } = await supabase.from('sakhi_clinic_treatments')
@@ -828,7 +838,7 @@ export class PatientsController {
                     .eq('patient_id', id)
                     .eq('clinic_id', clinic_id)
                     .single();
-                
+
                 if (parentError || !parent) {
                     throw new HttpException({ success: false, error: 'Invalid parent_treatment_id: Treatment not found or belongs to another patient' }, HttpStatus.BAD_REQUEST);
                 }
@@ -876,7 +886,7 @@ export class PatientsController {
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id)
                 .single();
-            
+
             if (existingError || !existing) {
                 throw new HttpException({ success: false, error: 'Treatment not found' }, HttpStatus.NOT_FOUND);
             }
@@ -1018,13 +1028,13 @@ export class PatientsController {
         try {
             // Generate a 4-digit PIN if none provided
             const newPin = body.newPin || Math.floor(1000 + Math.random() * 9000).toString();
-            
+
             // Hash the PIN
             const pin_hash = await bcrypt.hash(newPin, 10);
 
             // Update patient record
             const { data, error } = await supabase.from('sakhi_clinic_patients')
-                .update({ 
+                .update({
                     pin_hash,
                     failed_attempts: 0,
                     locked_until: null
@@ -1035,14 +1045,14 @@ export class PatientsController {
                 .single();
 
             if (error) throw error;
-            
+
             const actor_id = TenantContext.getUserId();
             await this.eventsQueue.add(DFO_EVENTS.PATIENT_PIN_RESET, new PatientEvent(
                 clinic_id, actor_id, id, { action: 'reset_patient_pin' }
             ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
 
-            return { 
-                success: true, 
+            return {
+                success: true,
                 message: 'PIN successfully reset',
                 newPin // We return it so the clinic frontend can display it to the user
             };

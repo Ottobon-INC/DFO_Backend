@@ -16,6 +16,7 @@ import { HealthController } from './api/health.controller';
 import { TenantInterceptor } from './infrastructure/interceptors/tenant.interceptor';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import configuration from './config/configuration';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import configuration from './config/configuration';
     KernelModule, // Load without .register() to avoid the dynamic module masking bug
   ],
   controllers: [
+    AppController,
     ThreadController,
     HealthController,
     DebugController

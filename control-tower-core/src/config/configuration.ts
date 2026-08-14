@@ -41,7 +41,8 @@ export default registerAs('app', () => ({
         mode: process.env.ABDM_MODE,
         publicCertUrl: process.env.ABDM_PUBLIC_CERT_URL,
         aadhaarOtpUrl: process.env.ABDM_AADHAAR_OTP_URL,
+        enrolByAadhaarUrl: process.env.ABDM_ENROL_BY_AADHAAR_URL,
+        abhaAddressSuggestionUrl: process.env.ABDM_ABHA_ADDRESS_SUGGESTION_URL,
+        abhaAddressCreateUrl: process.env.ABDM_ABHA_ADDRESS_CREATE_URL,
     },
 }));
-
-
