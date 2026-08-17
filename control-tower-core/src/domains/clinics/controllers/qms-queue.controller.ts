@@ -110,7 +110,7 @@ export class QMSQueueController {
     @Post('walk-in')
     async registerWalkIn(@Req() req: any, @Body() body: any) {
         const tenantId = req.tenantId || req.user?.clinic_id;
-        const { doctor_id, date, time, mobile, name } = body;
+        const { doctor_id, date, time, mobile, name, patient_id: providedPatientId } = body;
         
         if (!doctor_id || !date || !time || !mobile || !name) {
             throw new BadRequestException('doctor_id, date, time, mobile, and name are required');
@@ -119,42 +119,54 @@ export class QMSQueueController {
         const supabase = this.supabaseService.getClient();
         
         // 1. Search Patient / Create/Reuse
-        let patientId = null;
-        const { data: existingPt } = await supabase
-            .from('sakhi_clinic_patients')
-            .select('id')
-            .eq('clinic_id', tenantId)
-            .eq('mobile', mobile)
-            .single();
-
-        if (existingPt) {
-            patientId = existingPt.id;
-        } else {
-            const { data: newPt, error: ptErr } = await supabase
+        let patientId = providedPatientId || null;
+        
+        let isNewPatient = false;
+        
+        if (!patientId) {
+            const { data: existingPt } = await supabase
                 .from('sakhi_clinic_patients')
-                .insert({ clinic_id: tenantId, mobile, name, source: 'WALK_IN' })
-                .select('id')
-                .single();
-                
-            if (ptErr) {
-                if (ptErr.code === '23505') { // Unique violation
-                    // Race condition! Another bot/user just created this patient. Reuse it.
-                    const { data: racePt } = await supabase
-                        .from('sakhi_clinic_patients')
-                        .select('id')
-                        .eq('clinic_id', tenantId)
-                        .eq('mobile', mobile)
-                        .single();
-                    patientId = racePt?.id;
-                } else {
-                    throw ptErr;
+                .select('id, assigned_doctor_id')
+                .eq('clinic_id', tenantId)
+                .eq('mobile', mobile)
+                .limit(1)
+                .maybeSingle();
+
+            if (existingPt) {
+                patientId = existingPt.id;
+                if (!existingPt.assigned_doctor_id && doctor_id) {
+                    await supabase.from('sakhi_clinic_patients').update({ assigned_doctor_id: doctor_id }).eq('id', patientId);
                 }
             } else {
-                patientId = newPt.id;
+                const { data: newPt, error: ptErr } = await supabase
+                    .from('sakhi_clinic_patients')
+                    .insert({ clinic_id: tenantId, mobile, name, source: 'WALK_IN', assigned_doctor_id: doctor_id || null })
+                    .select('id')
+                    .single();
+                    
+                if (ptErr) {
+                    if (ptErr.code === '23505') { // Unique violation
+                        // Race condition! Another bot/user just created this patient. Reuse it.
+                        const { data: racePt } = await supabase
+                            .from('sakhi_clinic_patients')
+                            .select('id')
+                            .eq('clinic_id', tenantId)
+                            .eq('mobile', mobile)
+                            .limit(1)
+                            .maybeSingle();
+                        patientId = racePt?.id;
+                    } else {
+                        throw ptErr;
+                    }
+                } else {
+                    patientId = newPt.id;
+                    isNewPatient = true;
+                }
             }
         }
 
-        // 2. Slot Engine
+        try {
+            // 2. Slot Engine
         const nextAvailableSlot = await this.slotEngine.findNextAvailableSlot(tenantId, doctor_id, date, time);
 
         // 3. Appointment Creation
@@ -165,10 +177,21 @@ export class QMSQueueController {
                 patient_id: patientId,
                 doctor_id: doctor_id,
                 appointment_date: date,
-                appointment_time: nextAvailableSlot,
-                type: 'consultation',
-                queue_status: 'BOOKED',
-                source: 'WALK_IN'
+                start_time: nextAvailableSlot,
+                type: body.type || 'Consultation',
+                status: 'Scheduled',
+                source: 'WALK_IN',
+                patient_name_snapshot: name,
+                patient_phone_snapshot: mobile,
+                doctor_name_snapshot: body.doctor_name_snapshot || null,
+                visit_reason: body.visit_reason || 'Consultation',
+                referral_doctor: body.referral_doctor || null,
+                referral_doctor_phone: body.referral_doctor_phone || null,
+                patient_email_snapshot: body.patient_email_snapshot || null,
+                patient_age_snapshot: body.patient_age_snapshot || null,
+                sex_snapshot: body.sex_snapshot || null,
+                patient_marital_status_snapshot: body.patient_marital_status_snapshot || null,
+                patient_address_snapshot: body.patient_address_snapshot || null
             })
             .select('id')
             .single();
@@ -179,6 +202,17 @@ export class QMSQueueController {
         const enqueueResult = await this.qmsEngine.enqueuePatient(tenantId, appt.id);
         
         return enqueueResult;
+        } catch (error) {
+            // Rollback patient if we just created them
+            if (isNewPatient && patientId) {
+                console.warn(`Walk-in failed. Rolling back patient creation for ID: ${patientId}`);
+                await supabase
+                    .from('sakhi_clinic_patients')
+                    .delete()
+                    .eq('id', patientId);
+            }
+            throw error;
+        }
     }
 
     // --- DASHBOARD API: NOTIFICATION HISTORY ---

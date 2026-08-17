@@ -165,7 +165,12 @@ export class QmsEngineService {
     // --- SWEEPER RECOVERY CRON ---
     @Cron(CronExpression.EVERY_MINUTE)
     async sweepOrphanedAppointments() {
+<<<<<<< HEAD
         const supabase = this.supabaseService.getClient();
+=======
+        this.logger.debug('Running sweeper for orphaned tokenless appointments...');
+        const supabase = (this.supabaseService as any).getAdminClient ? (this.supabaseService as any).getAdminClient() : this.supabaseService.getClient();
+>>>>>>> 3ea72164a065831e68d241770837c2455d508679
         
         const { data: orphans } = await supabase
             .from('sakhi_clinic_appointments')

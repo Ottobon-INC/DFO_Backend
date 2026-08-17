@@ -102,7 +102,7 @@ export class AnalyticsService {
             }
         });
 
-        const peakHour = Object.keys(hoursDistribution).length > 0 ? Object.keys(hoursDistribution).reduce((a, b) => hoursDistribution[a] > hoursDistribution[b] ? a : b) : null;
+        const peakHour = Object.keys(hoursDistribution).reduce((a: string | null, b: string) => (a === null || hoursDistribution[a] < hoursDistribution[b]) ? b : a, null as string | null);
 
         return {
             total_appointments: total,

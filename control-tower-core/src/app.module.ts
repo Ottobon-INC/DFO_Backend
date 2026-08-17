@@ -9,17 +9,19 @@ import { QueueModule } from './infrastructure/queue.module';
 import { RedisCacheModule } from './infrastructure/cache/redis-cache.module';
 import { JanmasethuModule } from './domains/janmasethu/janmasethu.module';
 import { ClinicsModule } from './domains/clinics/clinics.module';
-import { AbdmModule } from './domains/abdm/abdm.module';
 import { DebugController } from './api/debug.controller';
 import { ThreadController } from './api/thread.controller';
 import { HealthController } from './api/health.controller';
 import { TenantInterceptor } from './infrastructure/interceptors/tenant.interceptor';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import configuration from './config/configuration';
-import { AppController } from './app.controller';
+import { InMemoryRedisModule } from './infrastructure/in-memory-redis.module';
+
+const isProduction = process.env.NODE_ENV === 'production';
 
 @Module({
   imports: [
+    ...(isProduction ? [] : [InMemoryRedisModule]),
     ConfigModule.forRoot({
       isGlobal: true,
       load: [configuration],
@@ -36,11 +38,9 @@ import { AppController } from './app.controller';
     RedisCacheModule,
     JanmasethuModule,
     ClinicsModule,
-    AbdmModule,
     KernelModule, // Load without .register() to avoid the dynamic module masking bug
   ],
   controllers: [
-    AppController,
     ThreadController,
     HealthController,
     DebugController

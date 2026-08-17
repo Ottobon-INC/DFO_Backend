@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -34,6 +35,15 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3000;
   
+  const config = new DocumentBuilder()
+    .setTitle('DFO Control Tower API')
+    .setDescription('API documentation for the Control Tower')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api', app, document);
+
   await app.listen(port, '0.0.0.0');
   console.log(`[Janmasethu DFO] Control Tower Core is running on: http://localhost:${port}`);
 }

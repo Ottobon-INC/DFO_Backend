@@ -40,10 +40,10 @@ const COLUMN_MAPPINGS: Record<string, string> = {
  * Dynamic clinical template outbox registry
  */
 export const OUTREACH_TEMPLATES = {
-    WELCOME_NUDGE: (name: string) => 
-        `Welcome to the Janmasethu Clinical Network, ${name}! 🏥 Your clinical profile is now active. How can we assist you today?`,
-    CARE_NUDGE: (name: string, problem: string) => 
-        `Hi ${name}, this is the Janmasethu Care Team. We noticed you were inquiring about "${problem}" yesterday. Would you like to schedule a quick call with our specialist? 😊🩺`,
+    WELCOME_NUDGE: (name: string, networkName: string = 'Clinical') => 
+        `Welcome to the ${networkName} Network, ${name}! 🏥 Your clinical profile is now active. How can we assist you today?`,
+    CARE_NUDGE: (name: string, problem: string, teamName: string = 'Care Team') => 
+        `Hi ${name}, this is your ${teamName}. We noticed you were inquiring about "${problem}" yesterday. Would you like to schedule a quick call with our specialist? 😊🩺`,
 };
 
 /**

@@ -359,8 +359,8 @@ export class LeadsController {
                 name: tv(body.name) || lead.name, 
                 mobile: phoneStr,
                 relation: tv(body.relation),
-                marital_status: tv(body.marital_status) ?? tv(body.maritalStatus) ?? 'Married',
-                gender: tv(body.gender) || lead.gender || 'Female',
+                marital_status: tv(body.marital_status) ?? tv(body.maritalStatus) ?? null,
+                gender: tv(body.gender) || lead.gender || null,
                 dob: tv(body.dob),
                 age: tv(body.age) || lead.age,
                 blood_group: tv(body.blood_group) ?? tv(body.bloodGroup),
@@ -378,7 +378,6 @@ export class LeadsController {
                 emergency_contact_relation: tv(body.emergency_contact_relation),
                 assigned_doctor_id: tv(body.assigned_doctor_id),
                 referral_doctor: tv(body.referral_doctor) ?? tv(body.referralDoctor),
-                hospital_address: tv(body.hospital_address) ?? tv(body.hospitalAddress),
                 registration_date,
                 status: tv(body.status) || 'ACTIVE',
                 pin_hash

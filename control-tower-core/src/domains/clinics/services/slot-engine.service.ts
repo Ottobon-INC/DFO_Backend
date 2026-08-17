@@ -17,7 +17,7 @@ export class SlotEngineService {
     private minsToTime(m: number): string {
         const h = Math.floor(m / 60);
         const mins = m % 60;
-        return `${h.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+        return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
     }
 
     private isWithinBreak(timeStr: string, breaks: any[]): boolean {
@@ -58,11 +58,12 @@ export class SlotEngineService {
         const workEnd = schedule.working_hours?.end || '18:00';
         const breaks = schedule.breaks || [];
 
-        // Validate working hours
+        // Validate working hours - we won't throw an error here because walk-ins and emergencies 
+        // frequently happen after standard clinic hours. We allow the check-in to proceed.
         const targetMins = this.timeToMins(preferredTime);
         const endMins = this.timeToMins(workEnd);
         if (targetMins >= endMins) {
-            throw new BadRequestException('Doctor is not available past this time today.');
+            this.logger.warn(`Walk-in registered past standard working hours (${preferredTime} >= ${workEnd}). Allowing it.`);
         }
 
         // Validate if preferred time falls during a break
@@ -80,10 +81,13 @@ export class SlotEngineService {
             .eq('clinic_id', tenantId)
             .eq('doctor_id', doctorId)
             .eq('appointment_date', preferredDate)
-            .eq('appointment_time', preferredTime)
-            .in('queue_status', ['BOOKED', 'ARRIVED', 'WAITING', 'CALLED', 'IN_CONSULTATION']);
+            .eq('start_time', preferredTime)
+            .not('status', 'in', '("Canceled","No Show")');
 
-        if (error) throw new Error('Failed to validate slot capacity');
+        if (error) {
+            this.logger.error(`Slot capacity query failed: ${JSON.stringify(error)}`);
+            throw new Error('Failed to validate slot capacity');
+        }
 
         if ((count || 0) < maxCapacity) {
             return preferredTime; // Slot is valid and has capacity
