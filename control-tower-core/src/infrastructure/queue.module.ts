@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
         BullModule.forRootAsync({
             inject: [ConfigService, { token: 'REDIS_MOCK_CONFIG', optional: true }],
             useFactory: (configService: ConfigService, mockConfig?: { host: string; port: number }) => {
+                console.log('QueueModule Factory:', { NODE_ENV: process.env.NODE_ENV, mockConfig });
                 if (process.env.NODE_ENV !== 'production' && mockConfig) {
                     return { connection: mockConfig };
                 }

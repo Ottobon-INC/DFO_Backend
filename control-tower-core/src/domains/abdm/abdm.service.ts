@@ -890,6 +890,7 @@ export class AbdmService {
             const profileHeaders = {
                 'REQUEST-ID': uuidv4(),
                 'TIMESTAMP': new Date().toISOString(),
+                'Authorization': `Bearer ${accessToken}`,
                 'X-token': `Bearer ${xToken}`,
                 'Content-Type': 'application/json'
             };
@@ -1015,13 +1016,16 @@ export class AbdmService {
                 throw new HttpException('Patient not found', HttpStatus.NOT_FOUND);
             }
 
-            // 2. Request (Using Basic Auth as per M1 Postman collection)
+            // 2. Authenticate
+            const session = await this.generateSession();
+            const accessToken = session.accessToken;
+
+            // 3. Request
             const timestamp = new Date().toISOString();
-            const basicAuth = Buffer.from('user:user123').toString('base64');
             const headers = {
                 'REQUEST-ID': requestId,
                 'TIMESTAMP': timestamp,
-                'Authorization': `Basic ${basicAuth}`,
+                'Authorization': `Bearer ${accessToken}`,
                 'Content-Type': 'application/json'
             };
 
@@ -1164,11 +1168,12 @@ export class AbdmService {
             // 3. Encrypt OTP
             const encryptedOtp = this.encryptData(otp, publicKey);
 
-            // 4. Verify OTP (No Authorization header as per Postman)
+            // 4. Verify OTP
             const timestamp = new Date().toISOString();
             const headers = {
                 'REQUEST-ID': requestId,
                 'TIMESTAMP': timestamp,
+                'Authorization': `Bearer ${session.accessToken}`,
                 'Content-Type': 'application/json'
             };
 
@@ -1197,6 +1202,7 @@ export class AbdmService {
             const profileHeaders = {
                 'REQUEST-ID': uuidv4(),
                 'TIMESTAMP': new Date().toISOString(),
+                'Authorization': `Bearer ${session.accessToken}`,
                 'X-token': `Bearer ${xToken}`,
                 'Content-Type': 'application/json'
             };
