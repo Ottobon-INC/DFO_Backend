@@ -5,6 +5,7 @@ export const VitalTypeSchema = z.enum([
   'heart_rate',
   'temperature',
   'weight',
+  'height',
   'blood_sugar'
 ]);
 
@@ -23,7 +24,7 @@ export const AddVitalRequestSchema = z.object({
     return /^\d{2,3}\/\d{2,3}$/.test(strValue);
   }
   
-  if (['heart_rate', 'temperature', 'weight', 'blood_sugar'].includes(data.vital_type)) {
+  if (['heart_rate', 'temperature', 'weight', 'height', 'blood_sugar'].includes(data.vital_type)) {
     // Must be numeric
     return !isNaN(Number(strValue));
   }
@@ -49,3 +50,9 @@ export interface VitalAnalysisResult {
   status: 'normal' | 'warning' | 'high_risk';
   reason: string;
 }
+
+export const BulkAddVitalRequestSchema = z.object({
+  vitals: z.array(AddVitalRequestSchema).min(1),
+});
+
+export type BulkAddVitalRequest = z.infer<typeof BulkAddVitalRequestSchema>;

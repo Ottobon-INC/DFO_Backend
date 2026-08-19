@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { VitalsRepository } from './vitals.repository';
-import { AddVitalRequest, VitalRecord, VitalAnalysisResult } from './vitals.schema';
+import { AddVitalRequest, VitalRecord, VitalAnalysisResult, BulkAddVitalRequest } from './vitals.schema';
 import { AlertingService } from '../alerting/alerting.service';
 import { AuditService } from '../../../infrastructure/audit/audit.service';
 
@@ -49,6 +49,32 @@ export class VitalsService {
     );
 
     return analysis;
+  }
+
+  async processAndSaveVitalsBulk(request: BulkAddVitalRequest): Promise<VitalAnalysisResult[]> {
+    const savedRecords = await this.repository.saveVitalsBulk(request.vitals);
+    
+    const results: VitalAnalysisResult[] = [];
+    for (const data of request.vitals) {
+        const history = await this.repository.getVitalsHistory(data.patient_id, data.vital_type, 3);
+        const analysis = this.analyzeThresholdsAndTrends(data, history);
+        
+        if (analysis.status === 'high_risk') {
+          this.logger.warn(`High Risk Vital Detected for ${data.patient_id}: ${analysis.reason}`);
+          await this.alertingService.processClinicalData({
+            patient_id: data.patient_id,
+            urgency_level: 'critical',
+            risk_flags: [analysis.reason, `Abnormal ${data.vital_type}`],
+            symptoms: [],
+            timestamp: new Date().toISOString()
+          });
+        }
+        
+        this.audit.log('system', 'CREATE', 'PATIENT', data.patient_id, `Vital ${data.vital_type} recorded: ${analysis.status} (${analysis.reason})`);
+        results.push(analysis);
+    }
+    
+    return results;
   }
 
   async getPatientVitals(patientId: string): Promise<VitalRecord[]> {

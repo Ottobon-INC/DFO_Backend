@@ -179,7 +179,7 @@ export class QMSQueueController {
                 appointment_date: date,
                 start_time: nextAvailableSlot,
                 type: body.type || 'Consultation',
-                status: 'Scheduled',
+                status: 'Checked-In',
                 source: 'WALK_IN',
                 patient_name_snapshot: name,
                 patient_phone_snapshot: mobile,

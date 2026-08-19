@@ -80,14 +80,33 @@ export class LeadsController {
             
             const phone = formatPhoneNumber(String(rawPhone).trim());
 
+            const rawAltPhone = tv(body.alternate_phone);
+            let alternate_phone: string | null = null;
+            if (rawAltPhone) {
+                if (!isValidPhoneNumber(String(rawAltPhone).trim())) {
+                    throw new HttpException({ success: false, error: 'Invalid alternate phone number format' }, HttpStatus.BAD_REQUEST);
+                }
+                alternate_phone = formatPhoneNumber(String(rawAltPhone).trim());
+            }
+
+            const rawAge = tv(body.age);
+            let age: string | null = null;
+            if (rawAge !== undefined && rawAge !== null && rawAge !== '') {
+                const parsedAge = parseInt(rawAge, 10);
+                if (isNaN(parsedAge) || parsedAge < 0 || parsedAge > 120) {
+                    throw new HttpException({ success: false, error: 'Age must be a valid number between 0 and 120' }, HttpStatus.BAD_REQUEST);
+                }
+                age = parsedAge.toString();
+            }
+
             const payload = this.utils.sanitizePayload({
                 name, phone, date_added: tv(body.date_added), status: normalizeStatus(tv(body.status)),
-                age: tv(body.age), gender: tv(body.gender), source: tv(body.source), inquiry: tv(body.inquiry),
+                age, gender: tv(body.gender), source: tv(body.source), inquiry: tv(body.inquiry),
                 problem: this.encryption.encrypt(tv(body.problem)), treatment_doctor: this.encryption.encrypt(tv(body.treatment_doctor)),
                 treatment_suggested: this.encryption.encrypt(tv(body.treatment_suggested)),
                 assigned_to_user_id: tv(body.assigned_to_user_id), guardian_name: tv(body.guardian_name),
                 guardian_age: tv(body.guardian_age), location: tv(body.location),
-                alternate_phone: tv(body.alternate_phone), referral_required: tv(body.referral_required),
+                alternate_phone, referral_required: tv(body.referral_required),
                 clinic_id,
             });
             const { data, error } = await supabase.from('sakhi_clinic_leads').insert(payload).select().single();

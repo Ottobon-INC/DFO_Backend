@@ -1,6 +1,6 @@
 import { Controller, Post, Get, Body, Param, InternalServerErrorException, BadRequestException, HttpCode, HttpStatus } from '@nestjs/common';
 import { VitalsService } from './vitals.service';
-import { AddVitalRequestSchema, AddVitalRequest, VitalAnalysisResult, VitalRecord } from './vitals.schema';
+import { AddVitalRequestSchema, AddVitalRequest, VitalAnalysisResult, VitalRecord, BulkAddVitalRequestSchema } from './vitals.schema';
 
 @Controller('vitals')
 export class VitalsController {
@@ -19,6 +19,24 @@ export class VitalsController {
       }
       throw new InternalServerErrorException(
         'Failed to process vital record',
+        error instanceof Error ? error.message : undefined
+      );
+    }
+  }
+
+  @Post('bulk')
+  @HttpCode(HttpStatus.OK)
+  async addVitalsBulk(@Body() body: any): Promise<{ data: VitalAnalysisResult[] }> {
+    try {
+      const validatedBody = BulkAddVitalRequestSchema.parse(body);
+      const results = await this.vitalsService.processAndSaveVitalsBulk(validatedBody);
+      return { data: results };
+    } catch (error: any) {
+      if (error.issues) {
+        throw new BadRequestException(error.issues.map((i: any) => i.message).join(', '));
+      }
+      throw new InternalServerErrorException(
+        'Failed to process bulk vital records',
         error instanceof Error ? error.message : undefined
       );
     }

@@ -39,6 +39,32 @@ export class VitalsRepository {
   }
 
   /**
+   * Saves multiple vital records in a single batch, natively encrypting values.
+   */
+  async saveVitalsBulk(dataList: AddVitalRequest[]): Promise<VitalRecord[]> {
+    if (!dataList || dataList.length === 0) return [];
+
+    const insertPayload = dataList.map(data => ({
+      patient_id: data.patient_id,
+      vital_type: data.vital_type,
+      value_encrypted: this.encryptionService.encrypt(String(data.value)),
+      recorded_at: data.recorded_at,
+    }));
+
+    const { data: savedData, error } = await this.supabase
+      .from(this.TABLE_NAME)
+      .insert(insertPayload)
+      .select();
+
+    if (error) {
+      this.logger.error(`Error saving bulk vitals for patient ${dataList[0]?.patient_id}: ${error.message}`);
+      throw new Error(`Failed to save bulk vitals: ${error.message}`);
+    }
+
+    return (savedData || []).map(row => this.mapToEntity(row));
+  }
+
+  /**
    * Fetches the historical vitals for a patient, optionally filtering by vital type 
    * and returning up to `limit` records ordered by recorded_at DESC.
    */

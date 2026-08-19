@@ -43,7 +43,7 @@ export class AppointmentsController {
             const end = start + limitNum - 1;
 
             let query = supabase.from('sakhi_clinic_appointments')
-                .select(`id, patient_id, lead_id, doctor_id, appointment_date, start_time, end_time, type, status, visit_reason, resource_id, patient_name_snapshot, sex_snapshot, doctor_name_snapshot, patient_phone_snapshot, patient_dob_snapshot, patient_age_snapshot, cancellation_reason, cancelled_at`, { count: 'exact' })
+                .select(`id, patient_id, lead_id, doctor_id, appointment_date, start_time, end_time, type, status, queue_status, token_number, visit_reason, resource_id, patient_name_snapshot, sex_snapshot, doctor_name_snapshot, patient_phone_snapshot, patient_dob_snapshot, patient_age_snapshot, cancellation_reason, cancelled_at, created_at, doctor:sakhi_clinic_users!doctor_id(first_name, last_name), patient:sakhi_clinic_patients!patient_id(name)`, { count: 'exact' })
                 .eq('clinic_id', clinic_id);
 
             if (date) query = query.eq('appointment_date', date);
@@ -477,8 +477,20 @@ export class AppointmentsController {
                 }
             }
 
+            let queue_status;
+            switch (status) {
+                case 'Checked-In': queue_status = 'WAITING'; break;
+                case 'In-Consultation': queue_status = 'IN_CONSULTATION'; break;
+                case 'Completed': queue_status = 'COMPLETED'; break;
+                case 'Canceled': queue_status = 'CANCELED'; break;
+                case 'No Show': queue_status = 'NO_SHOW'; break;
+                case 'Arrived': queue_status = 'ARRIVED'; break;
+                case 'Scheduled': queue_status = 'SCHEDULED'; break;
+            }
+
             const payload: any = this.utils.sanitizePayload({
                 status,
+                queue_status,
                 cancellation_reason: status === 'Canceled' ? cancellationReason : undefined,
                 cancelled_at: status === 'Canceled' ? timestamp : undefined,
                 arrived_at: status === 'Arrived' ? timestamp : undefined,
