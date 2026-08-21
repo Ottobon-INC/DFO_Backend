@@ -1,12 +1,15 @@
 import { Controller, Get, Post, Patch, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import * as bcrypt from 'bcrypt';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
-import { AppointmentEvent } from '../../../infrastructure/events/event-payloads';
+import { AppointmentEvent, PatientEvent, LeadEvent } from '../../../infrastructure/events/event-payloads';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsUtilsService } from '../services/clinics-utils.service';
+import { ClinicsEncryptionService } from '../services/clinics-encryption.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
+import { isValidPhoneNumber, formatPhoneNumber } from '../../../common/validators/phone.validator';
 
 @Controller('api/v1/clinics/appointments')
 @UseGuards(ClinicsAuthGuard)
@@ -18,6 +21,7 @@ export class AppointmentsController {
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly utils: ClinicsUtilsService,
+        private readonly encryption: ClinicsEncryptionService,
         @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
     ) {}
 
@@ -603,6 +607,198 @@ export class AppointmentsController {
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`POST /api/v1/clinics/appointments/walk-in-express`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post(':id/checkin-convert')
+    async checkinAndConvert(@Param('id') id: string, @Body() body: any) {
+        if (!this.utils.isUuid(id)) {
+            throw new HttpException({ success: false, error: 'Invalid appointment id', code: 'INVALID_APPOINTMENT_ID' }, HttpStatus.BAD_REQUEST);
+        }
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+        const supabase = this.supabaseService.getClient();
+
+        try {
+            // 1. Fetch Appointment
+            const { data: appointment, error: apptError } = await supabase
+                .from('sakhi_clinic_appointments')
+                .select('id, clinic_id, patient_id, lead_id, doctor_id, appointment_date, start_time, status, token_number, patient_name_snapshot, patient_phone_snapshot, patient_age_snapshot, sex_snapshot, patient_email_snapshot, patient_address_snapshot, patient_postal_code_snapshot, patient_marital_status_snapshot, patient_dob_snapshot')
+                .eq('id', id)
+                .eq('clinic_id', clinic_id)
+                .single();
+
+            if (apptError?.code === 'PGRST116' || !appointment) {
+                throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
+            }
+            if (apptError) throw apptError;
+
+            if (appointment.patient_id) {
+                throw new HttpException({ success: false, error: 'Appointment is already linked to an existing patient profile', code: 'ALREADY_CONVERTED' }, HttpStatus.BAD_REQUEST);
+            }
+
+            if (!appointment.lead_id) {
+                throw new HttpException({ success: false, error: 'Appointment does not have an associated lead to convert', code: 'NO_LEAD_ATTACHED' }, HttpStatus.BAD_REQUEST);
+            }
+
+            if (['Completed', 'Canceled', 'No Show'].includes(appointment.status)) {
+                throw new HttpException({ success: false, error: 'Cannot check in a finalized appointment', code: 'STATUS_IMMUTABLE' }, HttpStatus.BAD_REQUEST);
+            }
+
+            // 2. Fetch Lead
+            const { data: lead, error: leadError } = await supabase
+                .from('sakhi_clinic_leads')
+                .select('*')
+                .eq('id', appointment.lead_id)
+                .eq('clinic_id', clinic_id)
+                .single();
+
+            if (leadError?.code === 'PGRST116' || !lead) {
+                throw new HttpException({ success: false, error: 'Associated lead not found', code: 'LEAD_NOT_FOUND' }, HttpStatus.NOT_FOUND);
+            }
+            if (leadError) throw leadError;
+
+            if (lead.status === 'Converted') {
+                throw new HttpException({ success: false, error: 'Associated lead is already marked as converted', code: 'LEAD_ALREADY_CONVERTED' }, HttpStatus.BAD_REQUEST);
+            }
+
+            const tv = this.utils.toValue.bind(this.utils);
+
+            // 3. Strict Phone & Age Validation
+            const mobileInput = tv(body?.mobile) ?? tv(body?.phone) ?? appointment.patient_phone_snapshot ?? lead.phone;
+            const phoneStr = String(mobileInput || '').trim();
+            if (!isValidPhoneNumber(phoneStr)) {
+                throw new HttpException({ success: false, error: 'Invalid phone number format. Please provide a valid mobile number.' }, HttpStatus.BAD_REQUEST);
+            }
+            const cleanPhone = formatPhoneNumber(phoneStr);
+
+            const ageInput = tv(body?.age) ?? appointment.patient_age_snapshot ?? lead.age;
+            const ageStr = String(ageInput ?? '').trim();
+            if (!ageStr || isNaN(parseInt(ageStr, 10))) {
+                throw new HttpException({ success: false, error: 'A valid numeric age is required for patient registration.' }, HttpStatus.BAD_REQUEST);
+            }
+
+            // 4. Decrypt problem and prep credentials
+            const decryptedProblem = lead.problem ? this.encryption.decrypt(lead.problem) : '';
+            const uhid = tv(body?.uhid) || (await this.utils.generateUhid(supabase));
+            const rawPin = Math.floor(1000 + Math.random() * 9000).toString();
+            const pin_hash = await bcrypt.hash(rawPin, 10);
+            const registration_date = tv(body?.registration_date) || tv(body?.date) || new Date().toISOString().slice(0, 10);
+
+            const patientName = tv(body?.name) || appointment.patient_name_snapshot || lead.name;
+            const patientGender = tv(body?.gender) || tv(body?.sex) || appointment.sex_snapshot || lead.gender || null;
+
+            const patientPayload = this.utils.sanitizePayload({
+                uhid,
+                name: patientName,
+                mobile: cleanPhone,
+                relation: tv(body?.relation),
+                marital_status: tv(body?.marital_status) ?? tv(body?.maritalStatus) ?? appointment.patient_marital_status_snapshot ?? null,
+                gender: patientGender,
+                dob: tv(body?.dob) ?? appointment.patient_dob_snapshot,
+                age: ageStr,
+                blood_group: tv(body?.blood_group) ?? tv(body?.bloodGroup),
+                aadhar: tv(body?.aadhar),
+                email: tv(body?.email) ?? appointment.patient_email_snapshot,
+                house: tv(body?.house),
+                street: tv(body?.street) ?? tv(body?.address) ?? appointment.patient_address_snapshot,
+                area: tv(body?.area),
+                city: tv(body?.city),
+                district: tv(body?.district),
+                state: tv(body?.state),
+                postal_code: tv(body?.postal_code) ?? tv(body?.postalCode) ?? appointment.patient_postal_code_snapshot,
+                emergency_contact_name: tv(body?.emergency_contact_name) || lead.guardian_name,
+                emergency_contact_phone: tv(body?.emergency_contact_phone),
+                emergency_contact_relation: tv(body?.emergency_contact_relation),
+                assigned_doctor_id: tv(body?.assigned_doctor_id) || appointment.doctor_id,
+                referral_doctor: tv(body?.referral_doctor) ?? tv(body?.referralDoctor),
+                registration_date,
+                status: tv(body?.status) || 'ACTIVE',
+                pin_hash,
+            });
+
+            // 5. Execute atomic lead-to-patient conversion RPC
+            const { data: rpcResult, error: rpcError } = await supabase.rpc('convert_lead_to_patient', {
+                p_lead_id: appointment.lead_id,
+                p_clinic_id: clinic_id,
+                p_patient_data: patientPayload,
+                p_clinical_note: decryptedProblem,
+            });
+
+            if (rpcError) {
+                if (rpcError.message?.includes('already exists')) {
+                    throw new HttpException({ success: false, error: 'Patient with this mobile already exists' }, HttpStatus.CONFLICT);
+                }
+                throw rpcError;
+            }
+
+            const patient_id = rpcResult.patient_id;
+
+            // 6. Generate Smart Token for Queue Check-In
+            const today = appointment.appointment_date || new Date().toISOString().split('T')[0];
+            let token_number = appointment.token_number;
+            if (!token_number && appointment.doctor_id) {
+                token_number = await this.generateSmartToken(supabase, clinic_id, appointment.doctor_id, today);
+            }
+
+            // 7. Update Appointment with patient_id, Checked-In status and token
+            const timestamp = new Date().toISOString();
+            const apptUpdatePayload = this.utils.sanitizePayload({
+                patient_id,
+                lead_id: null,
+                status: 'Checked-In',
+                queue_status: 'WAITING',
+                checked_in_at: timestamp,
+                token_number,
+                patient_name_snapshot: patientName,
+                patient_phone_snapshot: cleanPhone,
+                patient_age_snapshot: ageStr,
+                sex_snapshot: patientGender,
+            });
+
+            const { data: updatedAppointment, error: updateApptError } = await supabase
+                .from('sakhi_clinic_appointments')
+                .update(apptUpdatePayload)
+                .eq('id', id)
+                .eq('clinic_id', clinic_id)
+                .select()
+                .single();
+
+            if (updateApptError) throw updateApptError;
+
+            // 8. Emit Events
+            const actor_id = TenantContext.getUserId();
+            await this.eventsQueue.add(DFO_EVENTS.PATIENT_CREATED, new PatientEvent(
+                clinic_id, actor_id, patient_id, { action: 'create_patient_from_lead', lead_id: appointment.lead_id, appointment_id: id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            await this.eventsQueue.add(DFO_EVENTS.LEAD_UPDATED, new LeadEvent(
+                clinic_id, actor_id, appointment.lead_id, { action: 'convert_lead', status: 'Converted', patient_id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_UPDATED, new AppointmentEvent(
+                clinic_id, actor_id, id, { action: 'link_converted_patient', patient_id }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_STATUS_CHANGED, new AppointmentEvent(
+                clinic_id, actor_id, id, { action: 'update_appointment_status', previousStatus: appointment.status, newStatus: 'Checked-In' }
+            ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+            return {
+                success: true,
+                data: {
+                    appointment: updatedAppointment,
+                    patient_id,
+                    uhid,
+                    token_number,
+                    status: 'Checked-In',
+                },
+                generatedPin: rawPin,
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`POST /api/v1/clinics/appointments/${id}/checkin-convert`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }

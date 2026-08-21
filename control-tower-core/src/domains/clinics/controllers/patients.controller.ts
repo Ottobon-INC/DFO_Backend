@@ -64,15 +64,18 @@ export class PatientsController {
         const supabase = this.supabaseService.getClient();
         const tv = this.utils.toValue.bind(this.utils);
         try {
-            const name = tv(body?.name);
+            const rawName = tv(body?.name);
             const mobile = tv(body?.mobile) ?? tv(body?.phone);
             const marital_status = tv(body?.marital_status) ?? tv(body?.maritalStatus) ?? null;
             const registration_date = tv(body?.registration_date) || tv(body?.date) || new Date().toISOString().slice(0, 10);
             const gender = tv(body?.gender) || null;
 
-            if (!name || !mobile) {
+            if (!rawName || !mobile) {
                 throw new HttpException({ success: false, error: 'name and mobile (or phone) are required' }, HttpStatus.BAD_REQUEST);
             }
+
+            // Normalize name: trim whitespace, collapse multiple spaces, title-case consistency
+            const name = String(rawName).trim().replace(/\s+/g, ' ');
             
             // Strict number format check (supports 10-15 digits, optional leading +)
             const mobileStr = String(mobile).trim();
@@ -82,11 +85,14 @@ export class PatientsController {
             
             const cleanMobile = formatPhoneNumber(mobileStr);
 
-            const { data: existing, error: existingError } = await supabase
-                .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', cleanMobile).maybeSingle();
-            if (existingError && existingError.code !== 'PGRST116') throw existingError;
-            if (existing) {
-                throw new HttpException({ success: false, error: 'Patient with this mobile already exists' }, HttpStatus.CONFLICT);
+            // Allow multiple family members to share the same mobile number.
+            // Only block exact duplicates where both name AND mobile match within the same clinic.
+            // Using .limit(1) instead of .maybeSingle() to safely handle pre-existing duplicates in the DB.
+            const { data: exactDuplicates, error: existingError } = await supabase
+                .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', cleanMobile).ilike('name', name).limit(1);
+            if (existingError) throw existingError;
+            if (exactDuplicates && exactDuplicates.length > 0) {
+                throw new HttpException({ success: false, error: 'A patient with this exact name and mobile number already exists' }, HttpStatus.CONFLICT);
             }
 
             const uhid = tv(body?.uhid) || (await this.utils.generateUhid(supabase));
@@ -120,6 +126,12 @@ export class PatientsController {
             return { success: true, data, generatedPin: rawPin };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
+            // Handle DB unique constraint violation gracefully (uq_clinic_patient_mobile)
+            // This fires when the DB-level UNIQUE(clinic_id, mobile) constraint hasn't been dropped yet.
+            if (error?.code === '23505') {
+                this.logger.warn('DB unique constraint hit on mobile — constraint needs to be dropped for family member support', { clinic_id, mobile: body?.mobile || body?.phone });
+                throw new HttpException({ success: false, error: 'A patient with this mobile number already exists. To register family members with the same number, the database constraint must be updated.' }, HttpStatus.CONFLICT);
+            }
             this.logger.error('POST /api/patients', error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
@@ -540,11 +552,17 @@ export class PatientsController {
         const tv = this.utils.toValue.bind(this.utils);
         try {
             const mobile = tv(body.mobile) ?? tv(body.phone);
-            if (mobile) {
-                const { data: conflict, error: conflictError } = await supabase
-                    .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', mobile).neq('id', id).maybeSingle();
-                if (conflictError && conflictError.code !== 'PGRST116') throw conflictError;
-                if (conflict) throw new HttpException({ success: false, error: 'Mobile number already exists' }, HttpStatus.CONFLICT);
+            const updatedName = tv(body.name);
+
+            // If both name and mobile are being set, check for exact duplicates (same name + same mobile)
+            // to prevent accidentally creating a carbon-copy patient via update.
+            if (mobile && updatedName) {
+                const normalizedName = String(updatedName).trim().replace(/\s+/g, ' ');
+                const { data: dupeCheck } = await supabase
+                    .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', mobile).ilike('name', normalizedName).neq('id', id).limit(1);
+                if (dupeCheck && dupeCheck.length > 0) {
+                    throw new HttpException({ success: false, error: 'Another patient with this exact name and mobile number already exists' }, HttpStatus.CONFLICT);
+                }
             }
             const sanitized = this.utils.sanitizePayload({
                 lead_id: tv(body.lead_id), name: tv(body.name), mobile,
@@ -578,6 +596,11 @@ export class PatientsController {
             return { success: true, data };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
+            // Handle DB unique constraint violation gracefully
+            if (error?.code === '23505') {
+                this.logger.warn('DB unique constraint hit on mobile update — constraint needs to be dropped for family member support', { clinic_id, id });
+                throw new HttpException({ success: false, error: 'A patient with this mobile number already exists. To allow shared numbers, the database constraint must be updated.' }, HttpStatus.CONFLICT);
+            }
             this.logger.error(`PATCH /api/patients/${id}`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
