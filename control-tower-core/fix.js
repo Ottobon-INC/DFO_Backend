@@ -1,0 +1,1 @@
+const fs = require('fs'); const path = '..\\..\\SuperAdmin\\src\\api.ts'; let c = fs.readFileSync(path, 'utf8'); c = c.replace(/Bearer /g, String.fromCharCode(96) + 'Bearer $' + '{token}' + String.fromCharCode(96)); fs.writeFileSync(path, c);

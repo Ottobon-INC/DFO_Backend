@@ -8,11 +8,16 @@ import helmet from 'helmet';
 
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: ['error', 'warn', 'log', 'debug'],
   });
+
+  // Increase payload limits for Base64 file uploads 
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   // Trust Proxy for Rate Limiting behind load balancers
   app.set('trust proxy', 1);
@@ -34,7 +39,7 @@ async function bootstrap() {
 
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3000;
-  
+
   const config = new DocumentBuilder()
     .setTitle('DFO Control Tower API')
     .setDescription('API documentation for the Control Tower')

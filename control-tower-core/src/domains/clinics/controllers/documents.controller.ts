@@ -248,8 +248,16 @@ export class DocumentsController {
                             this.logger.warn(`Could not generate presigned URL for ${doc.file_path}: ${s3Error.message}`);
                         }
                     }
+
+                    // Map uploader to have a 'name' property as expected by frontend
+                    let uploaderName = 'Unknown';
+                    if (doc.uploader) {
+                        uploaderName = [doc.uploader.first_name, doc.uploader.last_name].filter(Boolean).join(' ').trim() || 'Unknown';
+                    }
+
                     return {
                         ...doc,
+                        uploader: { name: uploaderName },
                         previewUrl
                     };
                 })
@@ -397,10 +405,6 @@ export class DocumentsController {
                 patient_id: patient_id, 
                 status: 'assigned' 
             };
-            
-            if (document_type) {
-                updatePayload.document_type = document_type;
-            }
 
             const { data: updatedDoc, error: updateError } = await supabase
                 .from('sakhi_clinic_documents')
@@ -410,6 +414,7 @@ export class DocumentsController {
                 .single();
 
             if (updateError) {
+                this.logger.error(`Document link DB error for doc ${documentId}:`, JSON.stringify(updateError));
                 throw new HttpException({ success: false, error: 'Database update error' }, HttpStatus.INTERNAL_SERVER_ERROR);
             }
 

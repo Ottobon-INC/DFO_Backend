@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards, Req } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
@@ -175,6 +175,127 @@ export class SuperAdminController {
             };
         } catch (error: any) {
             this.logger.error('GET /api/v1/superadmin/analytics', error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get('analytics/overview')
+    async getAnalyticsOverview(@Query('period') period: string = 'month') {
+        const supabase = this.supabaseService.getClient();
+        try {
+            const [clinicsRes, patientsRes, leadsRes, appointmentsRes] = await Promise.all([
+                supabase.from('clinics').select('id, name', { count: 'exact' }).eq('is_active', true),
+                supabase.from('sakhi_clinic_patients').select('id', { count: 'exact' }),
+                supabase.from('sakhi_clinic_leads').select('id, status, source, clinic_id'),
+                supabase.from('sakhi_clinic_appointments').select('id, clinic_id')
+            ]);
+
+            const clinicsData = clinicsRes.data || [];
+            const leadsData = leadsRes.data || [];
+            const appointmentsData = appointmentsRes.data || [];
+            const totalLeads = leadsData.length;
+
+            const global_lead_sources = leadsData.reduce((acc, lead) => {
+                const src = lead.source || 'Unknown';
+                acc[src] = (acc[src] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+
+            const convertedLeads = leadsData.filter(l => ['Converted', 'Won', 'Admitted', 'Patient', 'Converted - OPD'].includes(l.status)).length;
+            const global_conversion_rate = totalLeads ? ((convertedLeads / totalLeads) * 100).toFixed(1) + '%' : '0%';
+
+            const clinics_summary = clinicsData.map(c => {
+                const clinicLeads = leadsData.filter(l => l.clinic_id === c.id);
+                const clinicAppts = appointmentsData.filter(a => a.clinic_id === c.id);
+                const clinicConverted = clinicLeads.filter(l => ['Converted', 'Won', 'Admitted', 'Patient', 'Converted - OPD'].includes(l.status)).length;
+                return {
+                    id: c.id,
+                    name: c.name,
+                    leads: clinicLeads.length,
+                    appointments: clinicAppts.length,
+                    conversion_rate: clinicLeads.length ? ((clinicConverted / clinicLeads.length) * 100).toFixed(1) + '%' : '0%'
+                };
+            });
+
+            const data = {
+                period,
+                total_clinics: clinicsRes.count || 0,
+                total_patients: patientsRes.count || 0,
+                total_leads: totalLeads,
+                total_appointments: appointmentsData.length,
+                global_lead_sources,
+                global_conversion_rate,
+                leads_in_period: totalLeads,
+                clinics_summary
+            };
+
+            return { success: true, data };
+        } catch (error: any) {
+            this.logger.error('GET /api/v1/superadmin/analytics/overview', error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get('clinics/:id/analytics')
+    async getClinicAnalytics(@Param('id') id: string, @Query('period') period: string = 'month') {
+        const supabase = this.supabaseService.getClient();
+        try {
+            const { data: clinic } = await supabase.from('clinics').select('name').eq('id', id).single();
+            if (!clinic) throw new HttpException({ success: false, error: 'Clinic not found' }, HttpStatus.NOT_FOUND);
+
+            const [patientsRes, leadsRes, appointmentsRes, usersRes] = await Promise.all([
+                supabase.from('sakhi_clinic_patients').select('id', { count: 'exact' }).eq('clinic_id', id),
+                supabase.from('sakhi_clinic_leads').select('id, status, source').eq('clinic_id', id),
+                supabase.from('sakhi_clinic_appointments').select('id, source, appointment_type').eq('clinic_id', id),
+                supabase.from('sakhi_clinic_users').select('id', { count: 'exact' }).eq('clinic_id', id)
+            ]);
+
+            const leadsData = leadsRes.data || [];
+            const appointmentsData = appointmentsRes.data || [];
+            const totalLeads = leadsData.length;
+
+            const lead_pipeline = leadsData.reduce((acc, lead) => {
+                const stat = lead.status || 'New';
+                acc[stat] = (acc[stat] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+
+            const lead_sources = leadsData.reduce((acc, lead) => {
+                const src = lead.source || 'Unknown';
+                acc[src] = (acc[src] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+
+            const appointment_sources = appointmentsData.reduce((acc, appt) => {
+                const src = appt.source || appt.appointment_type || 'Unknown';
+                acc[src] = (acc[src] || 0) + 1;
+                return acc;
+            }, {} as Record<string, number>);
+
+            const convertedLeads = leadsData.filter(l => ['Converted', 'Won', 'Admitted', 'Patient', 'Converted - OPD'].includes(l.status)).length;
+            const conversion_rate = totalLeads ? ((convertedLeads / totalLeads) * 100).toFixed(1) + '%' : '0%';
+
+            const data = {
+                clinic_id: id,
+                clinic_name: clinic.name,
+                period,
+                overview: {
+                    total_leads: totalLeads,
+                    total_patients: patientsRes.count || 0,
+                    total_appointments: appointmentsData.length,
+                    total_staff: usersRes.count || 0
+                },
+                lead_pipeline,
+                lead_sources,
+                appointment_sources,
+                conversion_rate,
+                leads_in_period: totalLeads
+            };
+
+            return { success: true, data };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error(`GET /api/v1/superadmin/clinics/${id}/analytics`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
