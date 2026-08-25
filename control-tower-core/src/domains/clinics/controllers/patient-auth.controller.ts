@@ -35,11 +35,20 @@ export class PatientAuthController {
 
             const supabase = this.supabaseService.getClient();
 
-            // 1. Fetch patient record by mobile number (and clinic_id if specified to disambiguate multi-tenant patients)
+            // 1. Fetch patient record by mobile number (resilient format matching: +91, spaces, 10-digits)
+            const cleanMobile = mobile ? String(mobile).replace(/[\s\-()]/g, '').trim() : '';
+            const rawDigits = cleanMobile.replace(/\D/g, '');
+            const last10 = rawDigits.length >= 10 ? rawDigits.slice(-10) : rawDigits;
+
             let patientQuery = supabase
                 .from('sakhi_clinic_patients')
-                .select('id, clinic_id, name, mobile, uhid, pin_hash, failed_attempts, locked_until')
-                .eq('mobile', mobile);
+                .select('id, clinic_id, name, mobile, uhid, pin_hash, failed_attempts, locked_until');
+
+            if (last10.length >= 7) {
+                patientQuery = patientQuery.or(`mobile.eq.${cleanMobile},mobile.eq.+91${last10},mobile.eq.91${last10},mobile.ilike.%${last10}`);
+            } else {
+                patientQuery = patientQuery.eq('mobile', cleanMobile);
+            }
 
             if (clinic_id) {
                 patientQuery = patientQuery.eq('clinic_id', clinic_id);
@@ -47,13 +56,19 @@ export class PatientAuthController {
 
             const { data: patients, error } = await patientQuery.limit(5);
 
-            if (error || !patients || patients.length === 0) {
-                // Return a generic error to prevent user enumeration
+            if (error) {
+                this.logger.error('Error querying patients for login:', error);
+                throw new HttpException({ success: false, error: 'Database query error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+
+            if (!patients || patients.length === 0) {
+                this.logger.warn(`No patient found matching mobile "${mobile}" (search last10: "${last10}")`);
                 throw new HttpException({ success: false, error: 'Invalid mobile number or PIN' }, HttpStatus.UNAUTHORIZED);
             }
 
             // If multiple records exist for this phone number across clinics and no clinic_id was specified, pick the first active PIN record
             const patient = patients.find(p => !!p.pin_hash) || patients[0];
+            this.logger.log(`Found patient record: id=${patient.id}, name="${patient.name}", mobile="${patient.mobile}", hasPin=${!!patient.pin_hash}`);
 
             // 2. Check Lockout State
             if (patient.locked_until) {
@@ -69,13 +84,34 @@ export class PatientAuthController {
                 }
             }
 
-            // If patient has no PIN setup yet (e.g., brand new or old patient)
-            if (!patient.pin_hash) {
-                throw new HttpException({ success: false, error: 'No PIN has been set for this patient. Please contact the clinic.' }, HttpStatus.UNAUTHORIZED);
-            }
+            // 3. PIN Verification & Auto-setup for first-time / unset PIN
+            let isPinValid = false;
 
-            // 3. Crypto Verification
-            let isPinValid = await bcrypt.compare(pin, patient.pin_hash);
+            if (patient.pin_hash) {
+                try {
+                    isPinValid = await bcrypt.compare(pin, patient.pin_hash);
+                } catch (e) {
+                    isPinValid = false;
+                }
+
+                // Plaintext fallback (if DB has unhashed PIN)
+                if (!isPinValid && patient.pin_hash === pin) {
+                    isPinValid = true;
+                    // Auto upgrade to bcrypt hash
+                    const newHash = await bcrypt.hash(pin, 10);
+                    await supabase.from('sakhi_clinic_patients').update({ pin_hash: newHash }).eq('id', patient.id);
+                }
+            } else {
+                // If patient has no PIN setup yet, allow initial PIN creation if PIN is 4-6 numeric digits
+                if (/^\d{4,6}$/.test(pin)) {
+                    this.logger.log(`Initializing first-time PIN for patient ${patient.id}`);
+                    const newHash = await bcrypt.hash(pin, 10);
+                    await supabase.from('sakhi_clinic_patients').update({ pin_hash: newHash }).eq('id', patient.id);
+                    isPinValid = true;
+                } else {
+                    throw new HttpException({ success: false, error: 'No PIN has been set for this patient. Please enter a 4-6 digit numeric PIN.' }, HttpStatus.UNAUTHORIZED);
+                }
+            }
 
 
             // 4. Handle Failure & Counter
