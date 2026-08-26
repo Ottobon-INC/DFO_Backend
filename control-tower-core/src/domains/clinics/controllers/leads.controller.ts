@@ -10,8 +10,8 @@ import { ClinicsUtilsService } from '../services/clinics-utils.service';
 import { ClinicsEncryptionService } from '../services/clinics-encryption.service';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
-import { RolesGuard } from '../guards/roles.guard';
-import { Roles } from '../../../infrastructure/security/roles.decorator';
+import { HierarchicalRolesGuard } from '../guards/hierarchical-roles.guard';
+import { MinRoleTier } from '../../../infrastructure/security/role-tier.decorator';
 import { isValidPhoneNumber, formatPhoneNumber } from '../../../common/validators/phone.validator';
 import { COLUMN_MAPPINGS, VALID_STATUSES, SOURCE_VALUES, normalizeStatus, looksLikeSource, looksLikeStatus, normalizeLead } from '../helpers/leads.helpers';
 
@@ -299,8 +299,8 @@ export class LeadsController {
     }
 
     @Post(':id/re-engage')
-    @UseGuards(RolesGuard)
-    @Roles('admin', 'cro', 'front desk')
+    @UseGuards(HierarchicalRolesGuard)
+    @MinRoleTier(3) // Tier 3: Everyone can re-engage leads
     async reEngage(@Param('id') id: string) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();
@@ -327,8 +327,8 @@ export class LeadsController {
     }
 
     @Post(':id/convert')
-    @UseGuards(RolesGuard)
-    @Roles('admin', 'cro', 'front desk')
+    @UseGuards(HierarchicalRolesGuard)
+    @MinRoleTier(3) // Tier 3: Everyone can convert leads to patients
     async convertToPatient(@Param('id') id: string, @Body() body: any) {
         if (!this.utils.isUuid(id)) throw new HttpException({ success: false, error: 'Invalid lead id' }, HttpStatus.BAD_REQUEST);
         const clinic_id = TenantContext.getClinicId();

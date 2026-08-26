@@ -1,14 +1,14 @@
 import { Controller, Get, UseGuards, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
 import { ClinicsAuthGuard } from '../guards/clinics-auth.guard';
-import { RolesGuard } from '../guards/roles.guard';
-import { Roles } from '../../../infrastructure/security/roles.decorator';
+import { HierarchicalRolesGuard } from '../guards/hierarchical-roles.guard';
+import { MinRoleTier } from '../../../infrastructure/security/role-tier.decorator';
 import { TenantContext } from '../../../infrastructure/context/tenant.context';
 import { CONVERTED_STATUSES, LOST_STATUSES, NOT_INTERESTED_STATUSES, CRO_QUEUE_STATUS, FIRST_CONSULT_STATUSES, FOLLOW_UP_STATUSES, normalizeStatus } from '../helpers/leads.helpers';
 
 @Controller('api/dashboard')
-@UseGuards(ClinicsAuthGuard, RolesGuard)
-@Roles('admin', 'cro')
+@UseGuards(ClinicsAuthGuard, HierarchicalRolesGuard)
+@MinRoleTier(3) // Tier 3: Everyone can access the dashboard summary
 
 export class DashboardController {
     private readonly logger = new Logger(DashboardController.name);
