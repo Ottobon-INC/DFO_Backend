@@ -12,83 +12,23 @@ Implement a strict, hierarchical Role-Based Access Control (RBAC) system for a m
 
 ## Proposed Architecture
 
-### 1. Database Schema Design (Supabase / PostgreSQL)
+### 1. The "Code-Only" Tier Translation Strategy
 
-We will use an integer-based hierarchy to easily compute permission inheritance.
+Since we share a database with other developers, **we will NOT touch the database schema or enable RLS.** Doing so would break the app for the rest of the team.
 
-#### Roles & Users Table
-```sql
--- Define the core roles as an ENUM or lookup table
-CREATE TYPE user_role AS ENUM ('front_desk', 'nurse', 'doctor');
+Instead, we will keep the existing string-based roles in the database (e.g., `'doctor'`, `'nurse'`), but we will translate them into mathematical Tiers **in memory** inside our Backend and Frontend code.
 
--- Extend the users table with role and hierarchy tier
-ALTER TABLE public.users 
-ADD COLUMN role user_role NOT NULL DEFAULT 'front_desk',
-ADD COLUMN role_tier INT NOT NULL DEFAULT 3; -- 1: Doctor, 2: Nurse, 3: Front Desk
-
--- Function to automatically set role_tier based on role
-CREATE OR REPLACE FUNCTION set_role_tier() RETURNS TRIGGER AS $$
-BEGIN
-  IF NEW.role = 'doctor' THEN NEW.role_tier = 1;
-  ELSIF NEW.role = 'nurse' THEN NEW.role_tier = 2;
-  ELSE NEW.role_tier = 3;
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_set_role_tier
-BEFORE INSERT OR UPDATE ON public.users
-FOR EACH ROW EXECUTE FUNCTION set_role_tier();
+**The Mapping Dictionary:**
+```typescript
+const RoleTierMap: Record<string, number> = {
+  'doctor': 1,
+  'nurse': 2,
+  'cro': 3,
+  'front_desk': 3,
+  'admin': 1 // Admins get top-tier fallback access
+};
 ```
-
-#### Resource Tables Categorization
-Data tables will be conceptually grouped by the *minimum tier required to edit them*.
-- **Admin Data (Tier 3 required):** `appointments`, `patients`
-- **Nursing Data (Tier 2 required):** `vitals`, `triage_notes`
-- **Doctor Data (Tier 1 required):** `prescriptions`, `diagnoses`, `clinical_notes`
-
----
-
-### 2. Authorization Logic (Row Level Security & Backend Middleware)
-
-#### Database Level: Supabase Row Level Security (RLS)
-RLS policies will use the `role_tier` to enforce strict inheritance and read/write boundaries.
-
-```sql
--- Example 1: Doctor Data (Prescriptions) - Tier 1
--- ANYONE can read (Tier >= 1)
-CREATE POLICY "Anyone can view prescriptions" ON prescriptions
-FOR SELECT USING (true);
-
--- ONLY Doctors (Tier <= 1) can edit/insert/delete
-CREATE POLICY "Only Doctors can modify prescriptions" ON prescriptions
-FOR ALL USING (
-  (SELECT role_tier FROM users WHERE auth.uid() = id) <= 1
-);
-
--- Example 2: Nursing Data (Vitals) - Tier 2
--- ANYONE can read
-CREATE POLICY "Anyone can view vitals" ON vitals
-FOR SELECT USING (true);
-
--- Nurses AND Doctors (Tier <= 2) can modify
-CREATE POLICY "Nurses and Doctors can modify vitals" ON vitals
-FOR ALL USING (
-  (SELECT role_tier FROM users WHERE auth.uid() = id) <= 2
-);
-
--- Example 3: Admin Data (Appointments) - Tier 3
--- ANYONE can read
-CREATE POLICY "Anyone can view appointments" ON appointments
-FOR SELECT USING (true);
-
--- Front Desk, Nurses, and Doctors (Tier <= 3) can modify
-CREATE POLICY "Everyone can modify appointments" ON appointments
-FOR ALL USING (
-  (SELECT role_tier FROM users WHERE auth.uid() = id) <= 3
-);
-```
+Whenever a user logs in, the code will look at their string title, check this dictionary, and assign them a temporary Tier number just for that session. This gives us all the benefits of math-based security without touching the database!
 
 #### Backend Level: NestJS Guards (API Layer)
 We will create a hierarchical role guard in NestJS to protect API endpoints.
