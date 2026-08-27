@@ -1,0 +1,265 @@
+{
+  "name": "Link Token Generation",
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          ""
+        ],
+        "type": "text/javascript",
+        "packages": {}
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "pm.test(\"Positive Scenarios : Generate Link Token\", function () {\r",
+          "});\r",
+          "pm.test(\"Status code is 202\", function () {\r",
+          "    pm.response.to.have.status(202);\r",
+          "});\r",
+          "pm.test(\"Body matches string : \" + (pm.response.text()), function () {\r",
+          "    pm.expect(pm.response.text()).to.equals(\"\");\r",
+          "});\r",
+          "\r",
+          ""
+        ],
+        "type": "text/javascript",
+        "packages": {}
+      }
+    }
+  ],
+  "request": {
+    "method": "POST",
+    "header": [
+      {
+        "key": "REQUEST-ID",
+        "value": "{{$guid}}"
+      },
+      {
+        "key": "TIMESTAMP",
+        "value": "{{$isoTimestamp}}"
+      },
+      {
+        "key": "X-HIP-ID",
+        "value": "{{X-HIP-ID}}"
+      },
+      {
+        "key": "X-CM-ID",
+        "value": "{{X-CM-ID}}"
+      }
+    ],
+    "body": {
+      "mode": "raw",
+      "raw": "{\r\n    \"abhaNumber\": {{ABHA Number}},\r\n    \"abhaAddress\": \"{{ABHA Address}}\",\r\n    \"name\": \"{{name}}\",\r\n    \"gender\": \"{{gender}}\",\r\n    \"yearOfBirth\": {{year}}\r\n}",
+      "options": {
+        "raw": {
+          "language": "json"
+        }
+      }
+    },
+    "url": {
+      "raw": "https://dev.abdm.gov.in/api/hiecm/v3/token/generate-token",
+      "protocol": "https",
+      "host": [
+        "dev",
+        "abdm",
+        "gov",
+        "in"
+      ],
+      "path": [
+        "api",
+        "hiecm",
+        "v3",
+        "token",
+        "generate-token"
+      ]
+    }
+  },
+  "response": [
+    {
+      "name": "Success",
+      "originalRequest": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "REQUEST-ID",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "TIMESTAMP",
+            "value": "{{$isoTimestamp}}"
+          },
+          {
+            "key": "X-HIP-ID",
+            "value": "SBX_HIP_V2"
+          },
+          {
+            "key": "X-CM-ID",
+            "value": "sbx"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"abhaNumber\": 91536782361862,\r\n    \"abhaAddress\": \"abdulkalam.vthree@sbx\",\r\n    \"name\": \"abdulkalam husain Sheikh\",\r\n    \"gender\": \"M\",\r\n    \"yearOfBirth\": 1989\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://dev.abdm.gov.in/api/hiecm/v3/token/generate-token",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "abdm",
+            "gov",
+            "in"
+          ],
+          "path": [
+            "api",
+            "hiecm",
+            "v3",
+            "token",
+            "generate-token"
+          ]
+        }
+      },
+      "status": "Accepted",
+      "code": 202,
+      "_postman_previewlanguage": "Text",
+      "header": [],
+      "cookie": [],
+      "body": "Note: this response is expected on Webhook url. \r\nhttps://webhook.site/61350a6f-2a80-4dc0-9f87-80649933e989/api/v3/hip/token/on-generate-token\r\n\r\n{\r\n  \"abhaAddress\": \"abdulkalam.vthree@sbx\",\r\n  \"linkToken\": \"eyJhbGciOiJSUzUxMiJ9.eyJoaXBJZCI6IlNCWF9ISVBfVjIiLCJzdWIiOiJuaXJzaGFkLnZ0aHJlZUBzYngiLCJhYmhhTnVtYmVyIjo5MTUzNjc4MjM2MTg2MiwiZXhwIjoxNzMxMDE0NjQ5LCJpYXQiOjE3MTUyNDY2NDksInRyYW5zYWN0aW9uSWQiOiIxZWNkYjg5Yy05ZGMxLTQwZDEtOTg2Yy0xN2YzYTQxM2NmZDAiLCJhYmhhQWRkcmVzcyI6Im5pcnNoYWQudnRocmVlQHNieCJ9.IG1exoiGJirKiohjltXSeuAIG1y70quMJofgX1C4MDaYdNfADj1IrE1t24cmAKB2c72jEsI4DBhVColzpCnqflMUPnQ3EL6X76pmSa_A2uOu_ffrlIkbetSqw03VLBlVY6b6dCv9qGC_iV8jah8cBlPKBeVIVNQCW-UL2RTBj2IEK3r814vX4cMjaIFV_ry_FRweGcYC38mKQMvqW6uATQnytFDgYicok3uY-lDLgBYk7Ux4KtlRw5RhYactqXv0OJDEPLbnFmLmhYRtXW5xZp-P_e9YvodCIwob5kdGDNJJAg5vNc9lnm3R5343OfJaOaRtotXq4AV_EEdxG1FWag\",\r\n  \"response\": {\r\n    \"requestId\": \"7c9962d4-b259-42b5-8aba-342bea26fbb4\"\r\n  }\r\n}"
+    },
+    {
+      "name": "Access Denied",
+      "originalRequest": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "REQUEST-ID",
+            "value": "{{$guid}}"
+          },
+          {
+            "key": "TIMESTAMP",
+            "value": "{{$isoTimestamp}}"
+          },
+          {
+            "key": "X-HIP-ID",
+            "value": "SBX_HIP_V3"
+          },
+          {
+            "key": "X-CM-ID",
+            "value": "sbx",
+            "disabled": true
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\r\n    \"abhaNumber\": 91536782361862,\r\n    \"abhaAddress\": \"abdulkalam.vthree@sbx\",\r\n    \"name\": \"abdulkalam husain Sheikh\",\r\n    \"gender\": \"M\",\r\n    \"yearOfBirth\": 1989\r\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "https://dev.abdm.gov.in/api/hiecm/v3/token/generate-token",
+          "protocol": "https",
+          "host": [
+            "dev",
+            "abdm",
+            "gov",
+            "in"
+          ],
+          "path": [
+            "api",
+            "hiecm",
+            "v3",
+            "token",
+            "generate-token"
+          ]
+        }
+      },
+      "status": "Forbidden",
+      "code": 403,
+      "_postman_previewlanguage": "plain",
+      "header": [
+        {
+          "key": "expires",
+          "value": "0"
+        },
+        {
+          "key": "x-envoy-upstream-service-time",
+          "value": "12"
+        },
+        {
+          "key": "access-control-allow-origin",
+          "value": ""
+        },
+        {
+          "key": "access-control-allow-methods",
+          "value": "POST"
+        },
+        {
+          "key": "x-frame-options",
+          "value": "DENY"
+        },
+        {
+          "key": "access-control-allow-headers",
+          "value": "authorization,Content-Type,SOAPAction,apikey,Internal-Key,TIMESTAMP,X-HIP-ID,REQUEST-ID,X-CM-ID,Authorization"
+        },
+        {
+          "key": "pragma",
+          "value": "no-cache"
+        },
+        {
+          "key": "activityid",
+          "value": "671c8ef2-2b0e-43c6-acd3-252d626c1197"
+        },
+        {
+          "key": "access-control-expose-headers",
+          "value": ""
+        },
+        {
+          "key": "x-content-type-options",
+          "value": "nosniff"
+        },
+        {
+          "key": "x-xss-protection",
+          "value": "1 ; mode=block"
+        },
+        {
+          "key": "referrer-policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "content-type",
+          "value": "text/plain"
+        },
+        {
+          "key": "cache-control",
+          "value": "no-cache, no-store, max-age=0, must-revalidate"
+        },
+        {
+          "key": "date",
+          "value": "Thu, 09 May 2024 13:01:01 GMT"
+        },
+        {
+          "key": "Strict-Transport-Security",
+          "value": "max-age=16070400; includeSubDomains"
+        },
+        {
+          "key": "Transfer-Encoding",
+          "value": "chunked"
+        }
+      ],
+      "cookie": [],
+      "body": "Access Denied"
+    }
+  ]
+}

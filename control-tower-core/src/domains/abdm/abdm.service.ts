@@ -1326,4 +1326,59 @@ export class AbdmService {
             throw new HttpException('Unexpected Error verifying Aadhaar OTP', HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+
+    /**
+     * Temporary development-only endpoint to retrieve bridge services.
+     * MUST NEVER expose the real token or client secret.
+     */
+    async getBridgeServices(): Promise<any> {
+        const session = await this.generateSession();
+        const accessToken = session.accessToken;
+        const xCmId = this.configService.get<string>('app.abdm.xCmId');
+
+        const requestId = uuidv4();
+        const timestamp = new Date().toISOString();
+
+        const headers = {
+            'Authorization': `Bearer ${accessToken}`,
+            'REQUEST-ID': requestId,
+            'TIMESTAMP': timestamp,
+            'X-CM-ID': xCmId || 'sbx',
+        };
+
+        try {
+            const response = await axios.get('https://dev.abdm.gov.in/api/hiecm/gateway/v3/bridge-services', { headers });
+
+            this.logger.log(`Bridge services fetched successfully. REQUEST-ID: ${requestId}`);
+
+            return response.data;
+        } catch (error: any) {
+            if (error.response) {
+                this.logger.error(
+                    `Bridge services API failed. REQUEST-ID: ${requestId}, Status: ${error.response.status}`,
+                );
+                throw new HttpException({
+                    success: false,
+                    error: 'ABDM Bridge Services API Error',
+                    status: error.response.status,
+                    details: error.response.data,
+                    requestId
+                }, HttpStatus.BAD_GATEWAY);
+            } else if (error.request) {
+                this.logger.error(`Bridge services API network error. REQUEST-ID: ${requestId}. Error: ${error.message}`);
+                throw new HttpException({
+                    success: false,
+                    error: 'Network Error connecting to ABDM',
+                    requestId
+                }, HttpStatus.GATEWAY_TIMEOUT);
+            } else {
+                this.logger.error(`Bridge services API unexpected error. REQUEST-ID: ${requestId}. Error: ${error.message}`);
+                throw new HttpException({
+                    success: false,
+                    error: 'Unexpected Error connecting to ABDM',
+                    requestId
+                }, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
 }

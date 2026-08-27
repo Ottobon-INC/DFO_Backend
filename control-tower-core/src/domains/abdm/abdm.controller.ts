@@ -198,4 +198,14 @@ export class AbdmController {
         }
         return this.abdmService.verifyAadhaarOtpForVerification(body.patientId, body.txnId, body.otp, body.abhaAddress);
     }
+
+    /**
+     * Temporary development-only endpoint to retrieve bridge services.
+     */
+    @Get('test-bridge-services')
+    @HttpCode(HttpStatus.OK)
+    async testBridgeServices() {
+        this.logger.log('Received request to test ABDM bridge services');
+        return this.abdmService.getBridgeServices();
+    }
 }
