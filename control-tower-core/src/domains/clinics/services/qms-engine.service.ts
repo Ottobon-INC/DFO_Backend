@@ -14,22 +14,22 @@ export class QmsEngineService {
         'WAITING': ['CALLED', 'SKIPPED', 'CANCELLED', 'NO_SHOW'],
         'CALLED': ['IN_CONSULTATION', 'SKIPPED', 'CANCELLED', 'NO_SHOW'],
         'IN_CONSULTATION': ['COMPLETED', 'CANCELLED'],
-        'SKIPPED': ['WAITING', 'CANCELLED', 'NO_SHOW'], 
-        'COMPLETED': [], 
-        'CANCELLED': [], 
-        'NO_SHOW': ['WAITING'] 
+        'SKIPPED': ['WAITING', 'CANCELLED', 'NO_SHOW'],
+        'COMPLETED': [],
+        'CANCELLED': [],
+        'NO_SHOW': ['WAITING']
     };
 
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,
         private readonly eventEmitter: EventEmitter2,
         private readonly analyticsService: AnalyticsService
-    ) {}
+    ) { }
 
     // --- ENQUEUE ENGINE (100% ATOMIC, IDEMPOTENT) ---
     async enqueuePatient(tenantId: string, appointmentId: string): Promise<any> {
         const supabase = this.supabaseService.getClient();
-        
+
         // Single atomic call guarantees token generation, status update, and audit log!
         const { data, error } = await supabase.rpc('enqueue_qms_patient', {
             p_tenant_id: tenantId,
@@ -58,7 +58,7 @@ export class QmsEngineService {
 
     async transitionStatus(tenantId: string, appointmentId: string, newStatus: string): Promise<any> {
         const supabase = this.supabaseService.getClient();
-        
+
         const { data: appt, error: fetchErr } = await supabase
             .from('sakhi_clinic_appointments')
             .select('queue_status, doctor_id, token_number')
@@ -77,7 +77,7 @@ export class QmsEngineService {
 
         const updateData: any = { queue_status: newStatus };
         const now = new Date().toISOString();
-        
+
         if (newStatus === 'CALLED') updateData.called_at = now;
         if (newStatus === 'IN_CONSULTATION') updateData.consultation_started_at = now;
         if (newStatus === 'COMPLETED') updateData.completed_at = now;
@@ -107,7 +107,7 @@ export class QmsEngineService {
             status: newStatus,
             token: appt.token_number
         });
-        
+
         this.triggerRecalculationEvent(tenantId, appt.doctor_id, appointmentId);
 
         return data;
@@ -132,7 +132,7 @@ export class QmsEngineService {
     // --- QUEUE POSITION ENGINE (LIVE DYNAMIC STATUS) ---
     async getLiveQueueStatus(tenantId: string, doctorId: string, date: string): Promise<any> {
         const supabase = this.supabaseService.getClient();
-        
+
         const { data, error } = await supabase.rpc('get_live_queue', {
             p_tenant_id: tenantId,
             p_doctor_id: doctorId,
@@ -146,7 +146,7 @@ export class QmsEngineService {
         const avgConsultTime = perf.avg_consultation_time_mins > 0 ? perf.avg_consultation_time_mins : 15; // Fallback to 15m
 
         const activeQueue = data.filter(pt => ['WAITING', 'ARRIVED'].includes(pt.queue_status));
-        
+
         // Adjust ETA for waiting patients based on real-time speed
         const predictiveQueue = activeQueue.map(pt => {
             return {
@@ -167,7 +167,7 @@ export class QmsEngineService {
     async sweepOrphanedAppointments() {
         this.logger.debug('Running sweeper for orphaned tokenless appointments...');
         const supabase = (this.supabaseService as any).getAdminClient ? (this.supabaseService as any).getAdminClient() : this.supabaseService.getClient();
-        
+
         const { data: orphans } = await supabase
             .from('sakhi_clinic_appointments')
             .select('id, clinic_id')

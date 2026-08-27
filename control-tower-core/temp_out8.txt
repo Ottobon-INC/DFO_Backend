@@ -1,0 +1,6 @@
+    @Post('verification/aadhaar/request-otp')
+    @HttpCode(HttpStatus.OK)
+    async requestAadhaarOtpForVerification(@Body() body: { patientId: string; abhaAddress: string }) {
+    @Post('verification/aadhaar/verify-otp')
+    @HttpCode(HttpStatus.OK)
+    async verifyAadhaarOtpForVerification(@Body() body: { patientId: string; txnId: string; otp: string; abhaAddress: string }) {

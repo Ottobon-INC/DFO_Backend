@@ -1,0 +1,18 @@
+Match 1 at 1171:
+            // 4. Verify OTP (No Authorization header as per Postman)
+            const timestamp = new Date().toISOString();
+            const headers = {
+                'REQUEST-ID': requestId,
+                'TIMESTAMP': timestamp,
+                'Content-Type': 'application/json'
+            };
+
+Match 2 at 1200:
+            // 5. Fetch Profile
+            const profileHeaders = {
+                'REQUEST-ID': uuidv4(),
+                'TIMESTAMP': new Date().toISOString(),
+                'X-token': `Bearer ${xToken}`,
+                'Content-Type': 'application/json'
+            };
+

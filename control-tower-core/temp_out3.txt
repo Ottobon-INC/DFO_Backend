@@ -1,0 +1,173 @@
+    async verifyMobileOtp(patientId: string, txnId: string, otp: string, abhaAddress: string): Promise<any> {
+        if (!patientId || !txnId || !otp || !abhaAddress) {
+            throw new HttpException('Missing required parameters', HttpStatus.BAD_REQUEST);
+        }
+
+        const verifyOtpUrl = this.configService.get<string>('app.abdm.abhaAddressVerifyOtpUrl') || 'https://abhasbx.abdm.gov.in/abha/api/v3/phr/web/login/abha/verify';
+        const profileUrl = this.configService.get<string>('app.abdm.abhaProfileUrl') || 'https://abhasbx.abdm.gov.in/abha/api/v3/phr/web/login/profile/abha-profile';
+        const requestId = uuidv4();
+
+        try {
+            // 1. Verify patient and get clinic_id
+            const { data: patient, error: patientError } = await this.supabase
+                .from('sakhi_clinic_patients')
+                .select('clinic_id')
+                .eq('id', patientId)
+                .single();
+
+            if (patientError || !patient) {
+                throw new HttpException('Patient not found', HttpStatus.NOT_FOUND);
+            }
+
+            const clinicId = patient.clinic_id;
+
+            // 2. Authenticate
+            const session = await this.generateSession();
+            const accessToken = session.accessToken;
+
+            // 3. Fetch Public Certificate
+            const { publicKey } = await this.getPublicCertificate(accessToken);
+
+            // 4. Encrypt OTP
+            const encryptedOtp = this.encryptData(otp, publicKey);
+
+            // 5. Verify OTP
+            const timestamp = new Date().toISOString();
+            const headers = {
+                'REQUEST-ID': requestId,
+                'TIMESTAMP': timestamp,
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            };
+
+            const payload = {
+                scope: ["abha-address-login", "mobile-verify"],
+                authData: {
+                    authMethods: ["otp"],
+                    otp: {
+                        txnId: txnId,
+                        otpValue: encryptedOtp
+                    }
+                }
+            };
+
+            const response = await axios.post(verifyOtpUrl, payload, { headers });
+
+            const responseData = response.data || {};
+            const tokens = responseData.tokens || {};
+            const xToken = tokens.token;
+
+            if (!xToken) {
+                throw new Error('ABDM Response missing X-token');
+            }
+
+            // 6. Fetch Profile
+            const profileHeaders = {
+                'REQUEST-ID': uuidv4(),
+                'TIMESTAMP': new Date().toISOString(),
+                'X-token': `Bearer ${xToken}`,
+                'Content-Type': 'application/json'
+            };
+
+            const profileResponse = await axios.get(profileUrl, { headers: profileHeaders });
+            const profile = profileResponse.data || {};
+
+            const fetchedAbhaAddress = profile.abhaAddress || abhaAddress;
+            const fetchedAbhaNumber = profile.abhaNumber || null;
+
+            // 7. Check for conflicts and persist
+            // Check existing active ABHA for this patient
+            const { data: existingActive } = await this.supabase
+                .from('patient_abha')
+                .select('id, abha_number, abha_address')
+                .eq('patient_id', patientId)
+                .eq('is_active', true)
+                .single();
+
+            if (existingActive) {
+                // Identity conflict check
+                if (existingActive.abha_address && fetchedAbhaAddress && existingActive.abha_address !== fetchedAbhaAddress) {
+                    throw new HttpException('Identity Conflict: Patient already has a different active ABHA address', HttpStatus.CONFLICT);
+                }
+
+                // If same address or updating, update the record
+                await this.supabase
+                    .from('patient_abha')
+                    .update({
+                        abha_number: fetchedAbhaNumber || existingActive.abha_number,
+                        abha_address: fetchedAbhaAddress,
+                        verification_status: 'VERIFIED',
+                        verified_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existingActive.id);
+
+            } else {
+                // Check Clinic-level Address conflict
+                if (fetchedAbhaAddress) {
+                    const { data: addressConflict } = await this.supabase
+                        .from('patient_abha')
+                        .select('id')
+                        .eq('clinic_id', clinicId)
+                        .eq('abha_address', fetchedAbhaAddress)
+                        .eq('is_active', true)
+                        .single();
+
+                    if (addressConflict) {
+                        throw new HttpException('ABHA Address Conflict: Already actively linked to another patient in this clinic', HttpStatus.CONFLICT);
+                    }
+                }
+
+                // Insert new record
+                const dbPayload = {
+                    patient_id: patientId,
+                    clinic_id: clinicId,
+                    abha_number: fetchedAbhaNumber,
+                    abha_address: fetchedAbhaAddress,
+                    verification_status: 'VERIFIED',
+                    is_active: true,
+                    verified_at: new Date().toISOString()
+                };
+
+                const { error: insertError } = await this.supabase.from('patient_abha').insert([dbPayload]);
+                if (insertError) {
+                    this.logger.error(`Database insert error for patient_abha: ${JSON.stringify(insertError)}`);
+                    throw new HttpException('Database error while persisting ABHA', HttpStatus.INTERNAL_SERVER_ERROR);
+                }
+            }
+
+            // Mask ABHA Address
+            let maskedAbhaAddress = fetchedAbhaAddress;
+            if (maskedAbhaAddress && maskedAbhaAddress.includes('@')) {
+                const parts = maskedAbhaAddress.split('@');
+                if (parts[0].length > 2) {
+                    maskedAbhaAddress = parts[0].substring(0, 2) + '***@' + parts[1];
+                }
+            }
+
+            return {
+                success: true,
+                message: 'ABHA Address verified and linked successfully',
+                maskedAbhaAddress
+            };
+
+        } catch (error: any) {
+            if (error instanceof HttpException) {
+                throw error;
+            }
+            if (error.response) {
+                this.logger.error(`Verify Mobile OTP failed. REQUEST-ID: ${requestId}. Status: ${error.response.status}`);
+                throw new HttpException({
+                    success: false,
+                    error: 'Failed to verify mobile OTP',
+                    details: error.response.data
+                }, HttpStatus.BAD_GATEWAY);
+            }
+            throw new HttpException('Unexpected Error verifying mobile OTP', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Search Auth Methods for ABHA Address Verification via Aadhaar OTP
+     */
+    async searchAuthMethodsAadhaar(patientId: string, abhaAddress: string): Promise<any> {

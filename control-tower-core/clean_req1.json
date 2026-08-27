@@ -1,0 +1,26 @@
+{
+  "url": "https://dev.abdm.gov.in/api/hiecm/v3/token/generate-token",
+  "method": "POST",
+  "headers": [
+    {
+      "key": "REQUEST-ID",
+      "value": "{{$guid}}"
+    },
+    {
+      "key": "TIMESTAMP",
+      "value": "{{$isoTimestamp}}"
+    },
+    {
+      "key": "X-HIP-ID",
+      "value": "{{X-HIP-ID}}"
+    },
+    {
+      "key": "X-CM-ID",
+      "value": "{{X-CM-ID}}"
+    }
+  ],
+  "body": "{\r\n    \"abhaNumber\": {{ABHA Number}},\r\n    \"abhaAddress\": \"{{ABHA Address}}\",\r\n    \"name\": \"{{name}}\",\r\n    \"gender\": \"{{gender}}\",\r\n    \"yearOfBirth\": {{year}}\r\n}",
+  "responseStatus": "Accepted",
+  "responseCode": 202,
+  "responseBody": "Note: this response is expected on Webhook url. \r\nhttps://webhook.site/61350a6f-2a80-4dc0-9f87-80649933e989/api/v3/hip/token/on-generate-token\r\n\r\n{\r\n  \"abhaAddress\": \"abdulkalam.vthree@sbx\",\r\n  \"linkToken\": \"eyJhbGciOiJSUzUxMiJ9.eyJoaXBJZCI6IlNCWF9ISVBfVjIiLCJzdWIiOiJuaXJzaGFkLnZ0aHJlZUBzYngiLCJhYmhhTnVtYmVyIjo5MTUzNjc4MjM2MTg2MiwiZXhwIjoxNzMxMDE0NjQ5LCJpYXQiOjE3MTUyNDY2NDksInRyYW5zYWN0aW9uSWQiOiIxZWNkYjg5Yy05ZGMxLTQwZDEtOTg2Yy0xN2YzYTQxM2NmZDAiLCJhYmhhQWRkcmVzcyI6Im5pcnNoYWQudnRocmVlQHNieCJ9.IG1exoiGJirKiohjltXSeuAIG1y70quMJofgX1C4MDaYdNfADj1IrE1t24cmAKB2c72jEsI4DBhVColzpCnqflMUPnQ3EL6X76pmSa_A2uOu_ffrlIkbetSqw03VLBlVY6b6dCv9qGC_iV8jah8cBlPKBeVIVNQCW-UL2RTBj2IEK3r814vX4cMjaIFV_ry_FRweGcYC38mKQMvqW6uATQnytFDgYicok3uY-lDLgBYk7Ux4KtlRw5RhYactqXv0OJDEPLbnFmLmhYRtXW5xZp-P_e9YvodCIwob5kdGDNJJAg5vNc9lnm3R5343OfJaOaRtotXq4AV_EEdxG1FWag\",\r\n  \"response\": {\r\n    \"requestId\": \"7c9962d4-b259-42b5-8aba-342bea26fbb4\"\r\n  }\r\n}"
+}

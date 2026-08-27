@@ -19,7 +19,7 @@ export class StaffController {
         private readonly utils: ClinicsUtilsService,
         private readonly staffCache: StaffCacheService,
         @InjectQueue('dfo_events_queue') private readonly eventsQueue: Queue,
-    ) {}
+    ) { }
 
     @Get()
     async listStaff() {
@@ -44,6 +44,8 @@ export class StaffController {
                     user_id,
                     sakhi_clinic_users (
                         id,
+                        first_name,
+                        last_name,
                         first_name,
                         last_name,
                         email,

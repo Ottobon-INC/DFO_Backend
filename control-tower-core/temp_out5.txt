@@ -1,0 +1,22 @@
+Line 890:
+            const profileHeaders = {
+                'REQUEST-ID': uuidv4(),
+                'TIMESTAMP': new Date().toISOString(),
+                'X-token': `Bearer ${xToken}`,
+                'Content-Type': 'application/json'
+            };
+
+            const profileResponse = await axios.get(profileUrl, { headers: profileHeaders });
+            const profile = profileResponse.data || {};
+
+Line 1197:
+            const profileHeaders = {
+                'REQUEST-ID': uuidv4(),
+                'TIMESTAMP': new Date().toISOString(),
+                'X-token': `Bearer ${xToken}`,
+                'Content-Type': 'application/json'
+            };
+
+            const profileResponse = await axios.get(profileUrl, { headers: profileHeaders });
+            const profile = profileResponse.data || {};
+

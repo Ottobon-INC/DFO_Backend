@@ -1,0 +1,11 @@
+Line 1021:
+            // 2. Request (Using Basic Auth as per M1 Postman collection)
+            const timestamp = new Date().toISOString();
+            const basicAuth = Buffer.from('user:user123').toString('base64');
+            const headers = {
+                'REQUEST-ID': requestId,
+                'TIMESTAMP': timestamp,
+                'Authorization': `Basic ${basicAuth}`,
+                'Content-Type': 'application/json'
+            };
+

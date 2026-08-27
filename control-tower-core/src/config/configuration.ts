@@ -33,6 +33,16 @@ export default registerAs('app', () => ({
         workerRetryAttempts: parseInt(process.env.WORKER_RETRY_ATTEMPTS || '3', 10),
         routingStaleTimeout: parseInt(process.env.ROUTING_STALE_TIMEOUT || '600000', 10), // 10 min
     },
+    abdm: {
+        clientId: process.env.ABDM_CLIENT_ID,
+        clientSecret: process.env.ABDM_CLIENT_SECRET,
+        xCmId: process.env.ABDM_X_CM_ID,
+        sessionUrl: process.env.ABDM_SESSION_URL,
+        mode: process.env.ABDM_MODE,
+        publicCertUrl: process.env.ABDM_PUBLIC_CERT_URL,
+        aadhaarOtpUrl: process.env.ABDM_AADHAAR_OTP_URL,
+        enrolByAadhaarUrl: process.env.ABDM_ENROL_BY_AADHAAR_URL,
+        abhaAddressSuggestionUrl: process.env.ABDM_ABHA_ADDRESS_SUGGESTION_URL,
+        abhaAddressCreateUrl: process.env.ABDM_ABHA_ADDRESS_CREATE_URL,
+    },
 }));
-
-

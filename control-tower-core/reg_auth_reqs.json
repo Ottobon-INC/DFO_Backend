@@ -1,0 +1,89 @@
+{
+  "Session API": {
+    "url": "https://dev.abdm.gov.in/api/hiecm/gateway/v3/sessions",
+    "method": "POST",
+    "headers": [
+      {
+        "key": "Content-Type",
+        "value": "application/json"
+      },
+      {
+        "key": "REQUEST-ID",
+        "value": "{{$guid}}",
+        "type": "text"
+      },
+      {
+        "key": "TIMESTAMP",
+        "value": "{{$isoTimestamp}}",
+        "type": "text"
+      },
+      {
+        "key": "X-CM-ID",
+        "value": "sbx",
+        "type": "text"
+      }
+    ],
+    "body": "{\n    \"clientId\": \"<<Enter Client Id>>\",\n    \"clientSecret\": \"<<Enter Client Secret>>\",\n    \"grantType\": \"client_credentials\"\n}",
+    "response": null
+  },
+  "Update Bridge URL": {
+    "url": "https://dev.abdm.gov.in/api/hiecm/gateway/v3/bridge/url",
+    "method": "PATCH",
+    "headers": [
+      {
+        "key": "REQUEST-ID",
+        "value": "{{$guid}}"
+      },
+      {
+        "key": "TIMESTAMP",
+        "value": "{{$isoTimestamp}}"
+      },
+      {
+        "key": "X-CM-ID",
+        "value": "{{X-CM-ID}}"
+      }
+    ],
+    "body": "{\r\n    \"url\": \"{{URL to be updated}}\"\r\n}",
+    "response": ""
+  },
+  "Find Bridge Service By Service ID": {
+    "url": "https://dev.abdm.gov.in/api/hiecm/gateway/v3/bridge-service/serviceId/{{service ID}}",
+    "method": "GET",
+    "headers": [
+      {
+        "key": "REQUEST-ID",
+        "value": "{{$guid}}"
+      },
+      {
+        "key": "TIMESTAMP",
+        "value": "{{$isoTimestamp}}"
+      },
+      {
+        "key": "X-CM-ID",
+        "value": "{{X-CM-ID}}"
+      }
+    ],
+    "body": null,
+    "response": "{\n    \"id\": 9687,\n    \"bridgeId\": \"MOHANK_LTI\",\n    \"serviceId\": \"Mohan_HIP1\",\n    \"name\": \"Mohan Hospital\",\n    \"isHip\": true,\n    \"isPhr\": false,\n    \"endpoints\": {},\n    \"active\": true,\n    \"registerTime\": \"2022-06-10 09:02:52.252\",\n    \"dateCreated\": \"2022-06-10 09:02:52.252\",\n    \"dateModified\": \"2023-12-15 16:01:39.139\"\n}"
+  },
+  "Find Services By Bridge ID": {
+    "url": "https://dev.abdm.gov.in/api/hiecm/gateway/v3/bridge-services",
+    "method": "GET",
+    "headers": [
+      {
+        "key": "REQUEST-ID",
+        "value": "{{$guid}}"
+      },
+      {
+        "key": "TIMESTAMP",
+        "value": "{{$isoTimestamp}}"
+      },
+      {
+        "key": "X-CM-ID",
+        "value": "{{X-CM-ID}}"
+      }
+    ],
+    "body": null,
+    "response": "{\n    \"bridge\": {\n        \"id\": \"SBX_002167\",\n        \"name\": \"barot dhruv\",\n        \"url\": \"https://webhook.site/23961f0f-3500-48d7-8ce2-8d48ad3dc0e9\",\n        \"active\": true,\n        \"blocklisted\": false\n    },\n    \"services\": [\n        {\n            \"id\": \"A1_HL\",\n            \"name\": \"Aarogya One Health Loker\",\n            \"types\": [\n                \"HIP\"\n            ],\n            \"endpoints\": {\n                \"hipEndpoints\": [\n                    {\n                        \"use\": \"registration\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://events.hookdeck.com/e/src_3gsnEgI941mh/registration\"\n                    },\n                    {\n                        \"use\": \"data-upload\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://events.hookdeck.com/e/src_3gsnEgI941mh/data-upload\"\n                    }\n                ],\n                \"hiuEndpoints\": [\n                    {\n                        \"use\": \"registration\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://events.hookdeck.com/e/src_3gsnEgI941mh/registration\"\n                    },\n                    {\n                        \"use\": \"data-upload\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://events.hookdeck.com/e/src_3gsnEgI941mh/data-upload\"\n                    }\n                ],\n                \"healthLockerEndpoints\": [\n                    {\n                        \"use\": \"registration\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://events.hookdeck.com/e/src_3gsnEgI941mh/registration\"\n                    },\n                    {\n                        \"use\": \"data-upload\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://events.hookdeck.com/e/src_3gsnEgI941mh/data-upload\"\n                    }\n                ]\n            },\n            \"active\": true\n        },\n        {\n            \"id\": \"DHRUV_DEV_PHR_001\",\n            \"name\": \"Dhruv PHR APP\",\n            \"types\": [\n                \"PHR\"\n            ],\n            \"endpoints\": {},\n            \"active\": true\n        },\n        {\n            \"id\": \"DHRUV_DEV_PHR_002\",\n            \"name\": \"Dhruv PHR APP Only PHR\",\n            \"types\": [\n                \"PHR\"\n            ],\n            \"endpoints\": {},\n            \"active\": true\n        },\n        {\n            \"id\": \"Dhruv_HEALTH_LOCKER\",\n            \"name\": \"Aarogya One Health Loker\",\n            \"types\": [],\n            \"endpoints\": {\n                \"healthLockerEndpoints\": [\n                    {\n                        \"use\": \"registration\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://webhook.site/248a81d7-4194-4445-ad9c-db7541d8983b/registration\"\n                    },\n                    {\n                        \"use\": \"data-upload\",\n                        \"connectionType\": \"HTTPS\",\n                        \"address\": \"https://webhook.site/248a81d7-4194-4445-ad9c-db7541d8983b/data-upload\"\n                    }\n                ]\n            },\n            \"active\": true\n        },\n        {\n            \"id\": \"Dhruv_HIP\",\n            \"name\": \"Dhruv HIP\",\n            \"types\": [\n                \"HIP\"\n            ],\n            \"endpoints\": {},\n            \"active\": true\n        },\n        {\n            \"id\": \"Dhruv_HIU\",\n            \"name\": \"Dhruv HIU\",\n            \"types\": [\n                \"HIU\"\n            ],\n            \"endpoints\": {},\n            \"active\": true\n        },\n        {\n            \"id\": \"IN1210000232\",\n            \"name\": \"NP AR WEST SIANG aalo hq\",\n            \"types\": [\n                \"HIP\"\n            ],\n            \"endpoints\": {},\n            \"active\": true\n        },\n        {\n            \"id\": \"IN1210000232_1\",\n            \"name\": \"NP AR WEST SIANG aalo hq\",\n            \"types\": [\n                \"HIP\"\n            ],\n            \"endpoints\": {},\n            \"active\": true\n        },\n        {\n            \"id\": \"IN2410000190\",\n            \"name\": \"dhruv hospital\",\n            \"types\": [\n                \"HIP\"\n            ],\n            \"endpoints\": {},\n            \"active\": true\n        }\n    ]\n}"
+  }
+}

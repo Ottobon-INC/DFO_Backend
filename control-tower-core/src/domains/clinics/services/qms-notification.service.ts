@@ -6,7 +6,7 @@ import { ClinicsSupabaseService } from './clinics-supabase.service';
 export class QmsNotificationService {
     private readonly logger = new Logger(QmsNotificationService.name);
 
-    constructor(private readonly supabaseService: ClinicsSupabaseService) {}
+    constructor(private readonly supabaseService: ClinicsSupabaseService) { }
 
     // Evaluate quiet hours: returns a delayed timestamp if within quiet hours
     private calculateNextAttempt(quietHours: any, priority: number): string {
@@ -40,16 +40,17 @@ export class QmsNotificationService {
 
     @OnEvent('queue.recalculated')
     async handleQueueRecalculated(payload: { tenantId: string, doctorId: string, appointmentId: string, active_queue: any[] }) {
+        this.logger.log('Evaluating notifications for queue recalculation');
         this.logger.log(`Evaluating notifications for queue recalculation`);
-        
+
         const supabase = this.supabaseService.getClient();
-        
+
         const { data: config } = await supabase
             .from('tenant_configs')
             .select('notification_templates, quiet_hours, almost_turn_threshold')
             .eq('tenant_id', payload.tenantId)
             .single();
-            
+
         if (!config || !config.notification_templates) return;
 
         const threshold = config.almost_turn_threshold || 2;
@@ -57,7 +58,7 @@ export class QmsNotificationService {
         for (const pt of payload.active_queue) {
             // Business Rule: Almost Your Turn
             if (pt.queue_position === threshold && pt.queue_status === 'WAITING') {
-                
+
                 // 1. Deduplication Rule
                 const { data: existing } = await supabase
                     .from('qms_notifications_outbox')
@@ -82,14 +83,14 @@ export class QmsNotificationService {
                         await supabase.from('qms_notifications_outbox').insert({
                             tenant_id: payload.tenantId,
                             appointment_id: pt.appointment_id,
-                            recipient_mobile: Array.isArray(ptData.patient) ? (ptData.patient[0] as any)?.mobile : (ptData.patient as any).mobile,
+                            recipient_mobile: Array.isArray(ptData.patient) ? ptData.patient[0]?.mobile : (ptData.patient as any)?.mobile,
                             notification_type: 'ALMOST_TURN',
                             priority: 2, // HIGH
                             message_payload: message,
                             expires_at: this.getExpiry(60), // Expires in 1 hour if not delivered
                             next_attempt_at: this.calculateNextAttempt(config.quiet_hours, 2)
                         });
-                        
+
                         this.logger.log(`Inserted ALMOST_TURN notification for ${pt.appointment_id} into outbox.`);
                     }
                 }
