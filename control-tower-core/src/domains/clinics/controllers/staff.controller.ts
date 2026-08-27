@@ -44,7 +44,8 @@ export class StaffController {
                     user_id,
                     sakhi_clinic_users (
                         id,
-                        name,
+                        first_name,
+                        last_name,
                         email,
                         created_at
                     )
@@ -60,7 +61,7 @@ export class StaffController {
                 user_id: item.user_id,
                 role: item.role,
                 is_active: item.is_active,
-                name: item.sakhi_clinic_users?.name,
+                name: [item.sakhi_clinic_users?.first_name, item.sakhi_clinic_users?.last_name].filter(Boolean).join(' ') || item.sakhi_clinic_users?.email,
                 email: item.sakhi_clinic_users?.email,
                 joined_at: item.sakhi_clinic_users?.created_at
             }));

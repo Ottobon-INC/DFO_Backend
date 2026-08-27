@@ -1,71 +1,85 @@
-version: '3.8'
-
 services:
   backend:
-    build: ./control-tower-core
+    build:
+      context: ./control-tower-core
+      dockerfile: Dockerfile
+    container_name: digital-op-desk-backend
+    restart: unless-stopped
     ports:
-      - "3001:3000" # Host:Container
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - SUPABASE_URL=${SUPABASE_URL:-https://dummy.supabase.co}
-      - SUPABASE_KEY=${SUPABASE_KEY:-dummy-key}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      - control-tower-net
+      - digital-op-desk-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  frontend:
-    build: ../DFO_Frontend
+  redis:
+    image: redis:7-alpine
+    container_name: digital-op-desk-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
     ports:
-      - "3002:80" # Host:Container (Using port 3002 for frontend mapped to 80 in container)
-    environment:
-      - NODE_ENV=production
-    depends_on:
-      - backend
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
     networks:
-      - control-tower-net
+      - digital-op-desk-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
+  # Optional local PostgreSQL database service (if not using cloud Supabase)
   db:
     image: postgres:15-bookworm
+    container_name: digital-op-desk-postgres
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=control_tower
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-control_tower}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./control-tower-core/db/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d control_tower" ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-control_tower}"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
     networks:
-      - control-tower-net
-
-  redis:
-    image: redis:7-bookworm
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - control-tower-net
+      - digital-op-desk-network
+    profiles:
+      - with-db
 
 volumes:
+  redis_data:
+    driver: local
   postgres_data:
-
+    driver: local
 
 networks:
-  control-tower-net:
+  digital-op-desk-network:
+    name: digital-op-desk-network
     driver: bridge

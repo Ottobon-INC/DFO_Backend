@@ -1,37 +1,77 @@
-# --- Base Stage ---
+# ==========================================
+# Stage 1: Base Environment
+# ==========================================
 FROM node:22-bookworm-slim AS base
-# dumb-init ensures proper signal forwarding (fixes Windows STATUS_CONTROL_C_EXIT class issues in containers)
-RUN apt-get update && apt-get install -y --no-install-recommends dumb-init && rm -rf /var/lib/apt/lists/*
+
+# Install dumb-init for proper signal handling and ca-certificates for secure HTTPS
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dumb-init \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
+
+# Copy package manifests first for optimal Docker layer caching
 COPY package*.json ./
 
-# --- Dependencies Stage ---
+# ==========================================
+# Stage 2: Dependencies (Build & Prod)
+# ==========================================
 FROM base AS dependencies
+
+# Install all dependencies including devDependencies for build
 RUN npm install --legacy-peer-deps
 
-# --- Build Stage ---
+# ==========================================
+# Stage 3: Build
+# ==========================================
 FROM dependencies AS build
+
+# Copy all source code
 COPY . .
+
+# Compile TypeScript to JavaScript in /app/dist
 RUN npm run build
 
-# --- Production Stage ---
+# Prune devDependencies to keep image size small
+RUN npm prune --production --legacy-peer-deps
+
+# ==========================================
+# Stage 4: Production Runner
+# ==========================================
 FROM node:22-bookworm-slim AS production
-RUN apt-get update && apt-get install -y --no-install-recommends dumb-init && rm -rf /var/lib/apt/lists/*
+
+# Install dumb-init and ca-certificates in runtime container
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dumb-init \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-COPY --from=dependencies /app/node_modules ./node_modules
+# Copy production node_modules from dependencies stage
+COPY --from=build /app/node_modules ./node_modules
+# Copy compiled output from build stage
 COPY --from=build /app/dist ./dist
+# Copy package.json for runtime metadata
 COPY --from=build /app/package.json ./package.json
 
-# Environment defaults
+# Set environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
 
+# Set non-root user for security
+USER node
+
+# Expose backend port
 EXPOSE 3000
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+# Container Healthcheck targeting NestJS /health endpoint
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:' + (process.env.PORT || 3000) + '/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
-# Use dumb-init to properly handle signals
+# Use dumb-init to handle SIGINT/SIGTERM properly
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["node", "dist/main"]
+
+# Run the compiled application entrypoint
+CMD ["node", "dist/src/main"]

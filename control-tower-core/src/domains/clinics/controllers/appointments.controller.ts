@@ -159,12 +159,16 @@ export class AppointmentsController {
                 );
 
                 if (!availability.isAvailable) {
+                    let errorMessage = availability.reason || 'Selected time slot is not available.';
+                    if (availability.conflictClinicId) {
+                        errorMessage = availability.conflictClinicId === clinic_id 
+                            ? 'Double Booking Detected. This slot is already taken at this clinic.' 
+                            : 'Scheduling Conflict. The doctor is already booked at another clinic during this time slot.';
+                    }
                     throw new HttpException(
                         { 
                             success: false, 
-                            error: availability.conflictClinicId === clinic_id 
-                                ? 'Double Booking Detected. This slot is already taken at this clinic.' 
-                                : 'Scheduling Conflict. The doctor is already booked at another clinic during this time slot.'
+                            error: errorMessage 
                         }, 
                         HttpStatus.BAD_REQUEST
                     );
@@ -236,10 +240,17 @@ export class AppointmentsController {
             }
 
             if (doctor_id) {
-                const { data: doctorRow, error: doctorNameError } = await supabase.from('sakhi_clinic_users').select('name').eq('id', doctor_id).eq('clinic_id', clinic_id).eq('role', 'Doctor').maybeSingle();
+                const { data: doctorRow, error: doctorNameError } = await supabase
+                    .from('sakhi_clinic_users')
+                    .select('id, first_name, last_name')
+                    .eq('id', doctor_id)
+                    .eq('clinic_id', clinic_id)
+                    .eq('role', 'Doctor')
+                    .maybeSingle();
                 if (doctorNameError && doctorNameError.code !== 'PGRST116') throw doctorNameError;
                 if (!doctorRow) throw new HttpException({ success: false, error: 'Doctor not found or invalid role' }, HttpStatus.BAD_REQUEST);
-                if (!doctorNameSnapshot || doctorNameSnapshot === doctor_id) doctorNameSnapshot = doctorRow.name;
+                const doctorFullName = [doctorRow.first_name, doctorRow.last_name].filter(Boolean).join(' ').trim();
+                if (!doctorNameSnapshot || doctorNameSnapshot === doctor_id) doctorNameSnapshot = doctorFullName || doctor_id;
             }
 
             const payload = this.utils.sanitizePayload({
@@ -371,12 +382,16 @@ export class AppointmentsController {
                             supabase, checkDocId, appointment_date, start_time, endTime, id
                         );
                         if (!availability.isAvailable) {
+                            let errorMessage = availability.reason || 'Selected time slot is not available.';
+                            if (availability.conflictClinicId) {
+                                errorMessage = availability.conflictClinicId === clinic_id 
+                                    ? 'Double Booking Detected. This slot is already taken at this clinic.' 
+                                    : 'Scheduling Conflict. The doctor is already booked at another clinic during this time slot.';
+                            }
                             throw new HttpException(
                                 { 
                                     success: false, 
-                                    error: availability.conflictClinicId === clinic_id 
-                                        ? 'Double Booking Detected. This slot is already taken at this clinic.' 
-                                        : 'Scheduling Conflict. The doctor is already booked at another clinic during this time slot.'
+                                    error: errorMessage 
                                 }, 
                                 HttpStatus.BAD_REQUEST
                             );
@@ -389,12 +404,16 @@ export class AppointmentsController {
                             supabase, appointment.doctor_id, appointment_date, start_time, endTime, id
                         );
                         if (!availability.isAvailable) {
+                            let errorMessage = availability.reason || 'Selected time slot is not available.';
+                            if (availability.conflictClinicId) {
+                                errorMessage = availability.conflictClinicId === clinic_id 
+                                    ? 'Double Booking Detected. This slot is already taken at this clinic.' 
+                                    : 'Scheduling Conflict. The doctor is already booked at another clinic during this time slot.';
+                            }
                             throw new HttpException(
                                 { 
                                     success: false, 
-                                    error: availability.conflictClinicId === clinic_id 
-                                        ? 'Double Booking Detected. This slot is already taken at this clinic.' 
-                                        : 'Scheduling Conflict. The doctor is already booked at another clinic during this time slot.'
+                                    error: errorMessage 
                                 }, 
                                 HttpStatus.BAD_REQUEST
                             );
@@ -634,16 +653,61 @@ export class AppointmentsController {
             }
             if (apptError) throw apptError;
 
+            if (['Completed', 'Canceled', 'No Show'].includes(appointment.status)) {
+                throw new HttpException({ success: false, error: 'Cannot check in a finalized appointment', code: 'STATUS_IMMUTABLE' }, HttpStatus.BAD_REQUEST);
+            }
+
             if (appointment.patient_id) {
-                throw new HttpException({ success: false, error: 'Appointment is already linked to an existing patient profile', code: 'ALREADY_CONVERTED' }, HttpStatus.BAD_REQUEST);
+                // Patient is already registered. Perform direct check-in seamlessly!
+                let token_number = appointment.token_number;
+                if (!token_number && appointment.doctor_id) {
+                    token_number = await this.generateSmartToken(supabase, clinic_id, appointment.doctor_id, appointment.appointment_date);
+                }
+
+                const timestamp = new Date().toISOString();
+                const apptUpdatePayload: any = this.utils.sanitizePayload({
+                    status: 'Checked-In',
+                    queue_status: 'WAITING',
+                    checked_in_at: timestamp,
+                    token_number,
+                });
+
+                const { data: updatedAppointment, error: updateApptError } = await supabase
+                    .from('sakhi_clinic_appointments')
+                    .update(apptUpdatePayload)
+                    .eq('id', id)
+                    .eq('clinic_id', clinic_id)
+                    .select()
+                    .single();
+
+                if (updateApptError) throw updateApptError;
+
+                const { data: existingPatient } = await supabase
+                    .from('sakhi_clinic_patients')
+                    .select('id, uhid')
+                    .eq('id', appointment.patient_id)
+                    .eq('clinic_id', clinic_id)
+                    .maybeSingle();
+
+                const actor_id = TenantContext.getUserId();
+                await this.eventsQueue.add(DFO_EVENTS.APPOINTMENT_STATUS_CHANGED, new AppointmentEvent(
+                    clinic_id, actor_id, id, { action: 'update_appointment_status', previousStatus: appointment.status, newStatus: 'Checked-In' }
+                ), { attempts: 5, backoff: { type: 'exponential', delay: 1000 } });
+
+                return {
+                    success: true,
+                    data: {
+                        appointment: updatedAppointment,
+                        patient_id: appointment.patient_id,
+                        uhid: existingPatient?.uhid || null,
+                        token_number,
+                        status: 'Checked-In',
+                    },
+                };
             }
 
             if (!appointment.lead_id) {
                 throw new HttpException({ success: false, error: 'Appointment does not have an associated lead to convert', code: 'NO_LEAD_ATTACHED' }, HttpStatus.BAD_REQUEST);
-            }
-
-            if (['Completed', 'Canceled', 'No Show'].includes(appointment.status)) {
-                throw new HttpException({ success: false, error: 'Cannot check in a finalized appointment', code: 'STATUS_IMMUTABLE' }, HttpStatus.BAD_REQUEST);
             }
 
             // 2. Fetch Lead

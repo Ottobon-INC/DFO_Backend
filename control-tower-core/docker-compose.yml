@@ -1,62 +1,58 @@
 services:
-  app:
-    build: .
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: digital-op-desk-backend
+    restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - SUPABASE_URL=${SUPABASE_URL:-https://dummy.supabase.co}
-      - SUPABASE_KEY=${SUPABASE_KEY:-dummy-key}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - ESCALATION_SLA_TIMEOUT=300000
-      - WORKER_RETRY_ATTEMPTS=3
-      - ROUTING_STALE_TIMEOUT=600000
     depends_on:
-      db:
-        condition: service_healthy
       redis:
         condition: service_healthy
     networks:
-      - control-tower-net
-    restart: unless-stopped
-
-  db:
-    image: postgres:15-bookworm
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=control_tower
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./db/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U postgres -d control_tower" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - control-tower-net
+      - digital-op-desk-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
-    image: redis:7-bookworm
+    image: redis:7-alpine
+    container_name: digital-op-desk-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 5s
     networks:
-      - control-tower-net
+      - digital-op-desk-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  postgres_data:
-
+  redis_data:
+    driver: local
 
 networks:
-  control-tower-net:
+  digital-op-desk-network:
+    name: digital-op-desk-network
     driver: bridge
