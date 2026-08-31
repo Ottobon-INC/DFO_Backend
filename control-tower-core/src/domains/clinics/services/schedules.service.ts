@@ -12,14 +12,19 @@ export class SchedulesService {
     async getSchedules(clinicId: string, doctorId: string): Promise<any[]> {
         const supabase = this.supabaseService.getClient();
         
-        const { data, error } = await supabase
+        let query = supabase
             .from('sakhi_clinic_doctor_schedules')
             .select('*')
-            .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId)
             .eq('is_active', true)
             .order('day_of_week', { ascending: true })
             .order('start_time', { ascending: true });
+
+        if (clinicId && clinicId.trim() !== '') {
+            query = query.eq('clinic_id', clinicId);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
             this.logger.error(`Failed to fetch schedules: ${error.message}`);
@@ -32,12 +37,30 @@ export class SchedulesService {
     async saveSchedules(clinicId: string, doctorId: string, schedules: any[], startDate?: string, endDate?: string): Promise<any[]> {
         const supabase = this.supabaseService.getClient();
 
-        // 1. Delete existing template schedules for this doctor in this clinic
-        const { error: deleteError } = await supabase
+        // Auto-resolve real clinic_id if context was empty
+        let resolvedClinicId = clinicId;
+        if (!resolvedClinicId || resolvedClinicId.trim() === '') {
+            const { data: docData } = await supabase
+                .from('sakhi_clinic_users')
+                .select('clinic_id')
+                .eq('id', doctorId)
+                .single();
+            if (docData?.clinic_id) {
+                resolvedClinicId = docData.clinic_id;
+            }
+        }
+
+        // 1. Delete existing template schedules for this doctor
+        let deleteQuery = supabase
             .from('sakhi_clinic_doctor_schedules')
             .delete()
-            .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId);
+
+        if (resolvedClinicId && resolvedClinicId.trim() !== '') {
+            deleteQuery = deleteQuery.eq('clinic_id', resolvedClinicId);
+        }
+
+        const { error: deleteError } = await deleteQuery;
 
         if (deleteError) {
             this.logger.error(`Failed to delete old schedules: ${deleteError.message}`);
@@ -47,7 +70,7 @@ export class SchedulesService {
         // 2. Insert new schedules if any exist
         if (schedules && schedules.length > 0) {
             const insertPayload = schedules.map(s => ({
-                clinic_id: clinicId,
+                clinic_id: resolvedClinicId || '00000000-0000-0000-0000-000000000000',
                 doctor_id: doctorId,
                 day_of_week: s.day_of_week,
                 start_time: s.start_time,
@@ -70,7 +93,7 @@ export class SchedulesService {
             }
             
             // 3. Synchronously generate availability slots so they are immediately available
-            await this.generateAvailabilitySlots(clinicId, doctorId, data, startDate, endDate);
+            await this.generateAvailabilitySlots(resolvedClinicId, doctorId, data, startDate, endDate);
 
             return data || [];
         }
@@ -86,6 +109,19 @@ export class SchedulesService {
         
         const supabase = this.supabaseService.getClient();
         
+        // Auto-resolve real clinic_id if context was empty
+        let resolvedClinicId = clinicId;
+        if (!resolvedClinicId || resolvedClinicId.trim() === '') {
+            const { data: docData } = await supabase
+                .from('sakhi_clinic_users')
+                .select('clinic_id')
+                .eq('id', doctorId)
+                .single();
+            if (docData?.clinic_id) {
+                resolvedClinicId = docData.clinic_id;
+            }
+        }
+
         // Calculate date range (default 30 days starting from today)
         const now = new Date();
         const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -99,29 +135,35 @@ export class SchedulesService {
         // Fetch existing leaves for this doctor in this date range
         let doctorLeaves: string[] = [];
         try {
-            const { data: leavesData } = await supabase
+            let leaveQuery = supabase
                 .from('sakhi_clinic_doctor_leaves')
                 .select('leave_date')
-                .eq('clinic_id', clinicId)
                 .eq('doctor_id', doctorId)
                 .gte('leave_date', dateStrStart)
                 .lte('leave_date', dateStrEnd);
+            if (resolvedClinicId && resolvedClinicId.trim() !== '') {
+                leaveQuery = leaveQuery.eq('clinic_id', resolvedClinicId);
+            }
+            const { data: leavesData } = await leaveQuery;
             if (leavesData) {
                 doctorLeaves = leavesData.map(l => l.leave_date);
             }
-        } catch (e) {
-            // Leave table might be optional
-        }
+        } catch (e) {}
 
         // Delete unbooked slots in the target range to prevent stale slot records
-        await supabase
+        let delQuery = supabase
             .from('sakhi_clinic_availability_slots')
             .delete()
-            .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId)
             .gte('slot_date', dateStrStart)
             .lte('slot_date', dateStrEnd)
             .eq('booked_count', 0);
+
+        if (resolvedClinicId && resolvedClinicId.trim() !== '') {
+            delQuery = delQuery.eq('clinic_id', resolvedClinicId);
+        }
+
+        await delQuery;
 
         const slotsToInsert: any[] = [];
         
@@ -154,7 +196,7 @@ export class SchedulesService {
                     const endTimeStr = `${String(eH).padStart(2, '0')}:${String(eM).padStart(2, '0')}:00`;
 
                     slotsToInsert.push({
-                        clinic_id: clinicId,
+                        clinic_id: resolvedClinicId || '00000000-0000-0000-0000-000000000000',
                         doctor_id: doctorId,
                         slot_date: dateStr,
                         start_time: startTimeStr,
@@ -173,7 +215,6 @@ export class SchedulesService {
         }
 
         if (slotsToInsert.length > 0) {
-            // Batch insert generated slots (batches of 100 to avoid payload limits)
             const batchSize = 100;
             for (let i = 0; i < slotsToInsert.length; i += batchSize) {
                 const batch = slotsToInsert.slice(i, i + batchSize);
@@ -194,10 +235,13 @@ export class SchedulesService {
         let query = supabase
             .from('sakhi_clinic_availability_slots')
             .select('*')
-            .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId)
             .order('slot_date', { ascending: true })
             .order('start_time', { ascending: true });
+
+        if (clinicId && clinicId.trim() !== '') {
+            query = query.eq('clinic_id', clinicId);
+        }
 
         if (startDate && endDate) {
             query = query.gte('slot_date', startDate).lte('slot_date', endDate);
@@ -221,12 +265,24 @@ export class SchedulesService {
     async setDoctorLeave(clinicId: string, doctorId: string, leaveDate: string, leaveType: string = 'Full Day', reason: string = 'Doctor on Leave') {
         const supabase = this.supabaseService.getClient();
 
+        let resolvedClinicId = clinicId;
+        if (!resolvedClinicId || resolvedClinicId.trim() === '') {
+            const { data: docData } = await supabase
+                .from('sakhi_clinic_users')
+                .select('clinic_id')
+                .eq('id', doctorId)
+                .single();
+            if (docData?.clinic_id) {
+                resolvedClinicId = docData.clinic_id;
+            }
+        }
+
         // 1. Record in leaves table
         try {
             await supabase
                 .from('sakhi_clinic_doctor_leaves')
                 .upsert({
-                    clinic_id: clinicId,
+                    clinic_id: resolvedClinicId || '00000000-0000-0000-0000-000000000000',
                     doctor_id: doctorId,
                     leave_date: leaveDate,
                     leave_type: leaveType,
@@ -241,7 +297,6 @@ export class SchedulesService {
         await supabase
             .from('sakhi_clinic_availability_slots')
             .update({ status: 'LEAVE', block_reason: reason })
-            .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId)
             .eq('slot_date', leaveDate)
             .eq('booked_count', 0);
@@ -257,7 +312,6 @@ export class SchedulesService {
             await supabase
                 .from('sakhi_clinic_doctor_leaves')
                 .delete()
-                .eq('clinic_id', clinicId)
                 .eq('doctor_id', doctorId)
                 .eq('leave_date', leaveDate);
         } catch (e) {}
@@ -266,7 +320,6 @@ export class SchedulesService {
         await supabase
             .from('sakhi_clinic_availability_slots')
             .update({ status: 'AVAILABLE', block_reason: null })
-            .eq('clinic_id', clinicId)
             .eq('doctor_id', doctorId)
             .eq('slot_date', leaveDate)
             .eq('booked_count', 0);
@@ -280,9 +333,12 @@ export class SchedulesService {
             let query = supabase
                 .from('sakhi_clinic_doctor_leaves')
                 .select('*')
-                .eq('clinic_id', clinicId)
                 .eq('doctor_id', doctorId)
                 .order('leave_date', { ascending: true });
+
+            if (clinicId && clinicId.trim() !== '') {
+                query = query.eq('clinic_id', clinicId);
+            }
 
             if (startDate && endDate) {
                 query = query.gte('leave_date', startDate).lte('leave_date', endDate);
