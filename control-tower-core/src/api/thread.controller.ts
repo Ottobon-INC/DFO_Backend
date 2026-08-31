@@ -30,7 +30,7 @@ class SwitchOwnershipDto {
     @IsOptional() @IsString() assigned_role?: string;
 }
 
-@Controller('thread')
+@Controller('api/thread')
 export class ThreadController {
     constructor(
         private readonly threadService: ThreadService,
@@ -47,6 +47,36 @@ export class ThreadController {
             dto.metadata = this.sanitizeMetadata(dto.metadata);
         }
         return this.threadService.initializeThread(dto);
+    }
+
+    @Get('all')
+    async getAll() {
+        return this.threadService.getAllThreads();
+    }
+
+    @Get('queue/doctor')
+    async getDoctorQueue() {
+        return this.threadService.getThreadsByStatus('red');
+    }
+
+    @Get('queue/nurse')
+    async getNurseQueue() {
+        return this.threadService.getThreadsByStatus('yellow');
+    }
+
+    @Get('queue/ai')
+    async getAIQueue() {
+        return this.threadService.getThreadsByStatus('green');
+    }
+
+    @Get('context/:id')
+    async getContext(@Param('id') threadId: string) {
+        return this.threadService.getMessages(threadId);
+    }
+
+    @Get('audit/all')
+    async getAudits() {
+        return this.auditService.getAll();
     }
 
     @Get(':id')
@@ -78,31 +108,6 @@ export class ThreadController {
         return this.ownershipService.switchOwnership(dto.thread_id, dto.ownership, dto.actor_id, 'HUMAN', {
             assignedRole: dto.assigned_role,
         });
-    }
-
-    @Get('all')
-    async getAll() {
-        return this.threadService.getAllThreads();
-    }
-
-    @Get('queue/doctor')
-    async getDoctorQueue() {
-        return this.threadService.getThreadsByStatus('red');
-    }
-
-    @Get('queue/nurse')
-    async getNurseQueue() {
-        return this.threadService.getThreadsByStatus('yellow');
-    }
-
-    @Get('queue/ai')
-    async getAIQueue() {
-        return this.threadService.getThreadsByStatus('green');
-    }
-
-    @Get('context/:id')
-    async getContext(@Param('id') threadId: string) {
-        return this.threadService.getMessages(threadId);
     }
 
     @Post('assign')

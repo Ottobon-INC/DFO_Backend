@@ -4,6 +4,7 @@ import configuration from './config/configuration';
 import { DatabaseModule } from './infrastructure/database.module';
 import { JanmasethuModule } from './domains/janmasethu/janmasethu.module';
 import { KernelModule } from './kernel/kernel.module';
+import { ThreadController } from './api/thread.controller';
 
 @Module({
     imports: [
@@ -15,6 +16,9 @@ import { KernelModule } from './kernel/kernel.module';
         DatabaseModule,
         JanmasethuModule,
         KernelModule,
+    ],
+    controllers: [
+        ThreadController,
     ],
 })
 export class JanmasethuOnlyModule { }
