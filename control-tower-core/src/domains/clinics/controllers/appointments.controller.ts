@@ -423,8 +423,10 @@ export class AppointmentsController {
 
             const allowed = this.utils.sanitizePayload({
                 appointment_date: body.appointment_date,
-                start_time: body.start_time, end_time: endTime,
-                doctor_id: validatedDoctorId, notes: body.notes,
+                start_time: body.start_time,
+                end_time: endTime,
+                doctor_id: validatedDoctorId,
+                visit_reason: body.visit_reason,
             });
 
             const oldDoctor = appointment.doctor_id;
@@ -516,9 +518,6 @@ export class AppointmentsController {
                 queue_status,
                 cancellation_reason: status === 'Canceled' ? cancellationReason : undefined,
                 cancelled_at: status === 'Canceled' ? timestamp : undefined,
-                arrived_at: status === 'Arrived' ? timestamp : undefined,
-                checked_in_at: status === 'Checked-In' ? timestamp : undefined,
-                completed_at: status === 'Completed' ? timestamp : undefined,
             });
 
             if (token_number) {
@@ -608,7 +607,6 @@ export class AppointmentsController {
                 status: 'Checked-In',
                 visit_reason: visit_reason || 'Walk-in',
                 token_number: tokenNumber,
-                checked_in_at: new Date().toISOString(),
                 patient_name_snapshot: name,
                 patient_phone_snapshot: phone
             };
@@ -668,7 +666,6 @@ export class AppointmentsController {
                 const apptUpdatePayload: any = this.utils.sanitizePayload({
                     status: 'Checked-In',
                     queue_status: 'WAITING',
-                    checked_in_at: timestamp,
                     token_number,
                 });
 
@@ -813,7 +810,6 @@ export class AppointmentsController {
                 lead_id: null,
                 status: 'Checked-In',
                 queue_status: 'WAITING',
-                checked_in_at: timestamp,
                 token_number,
                 patient_name_snapshot: patientName,
                 patient_phone_snapshot: cleanPhone,

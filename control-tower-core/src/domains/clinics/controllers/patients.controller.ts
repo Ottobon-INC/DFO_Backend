@@ -216,20 +216,37 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            if (!body?.vital_type || !body?.value) {
+            const items = Array.isArray(body) 
+                ? body 
+                : (Array.isArray(body?.vitals) ? body.vitals : [body]);
+
+            const validPayloads = items
+                .map((item: any) => {
+                    const vitalType = item?.vital_type ?? item?.type;
+                    const vitalValue = item?.vital_value ?? item?.value;
+                    if (!vitalType || vitalValue === undefined || vitalValue === null || String(vitalValue).trim() === '') {
+                        return null;
+                    }
+                    return {
+                        patient_id: id,
+                        clinic_id: clinic_id,
+                        appointment_id: item.appointment_id || body?.appointment_id || null,
+                        vital_type: vitalType,
+                        vital_value: String(vitalValue),
+                        recorded_at: item.recorded_at || body?.recorded_at || new Date().toISOString()
+                    };
+                })
+                .filter(Boolean);
+
+            if (validPayloads.length === 0) {
                 throw new HttpException({ success: false, error: 'vital_type and value are required' }, HttpStatus.BAD_REQUEST);
             }
 
-            const payload = {
-                patient_id: id,
-                clinic_id: clinic_id,
-                appointment_id: body.appointment_id || null,
-                vital_type: body.vital_type,
-                vital_value: String(body.value),
-                recorded_at: body.recorded_at || new Date().toISOString()
-            };
-
-            const { data, error } = await supabase.from('sakhi_clinic_patient_vitals').insert(payload).select().single();
+            const { data, error } = await supabase
+                .from('sakhi_clinic_patient_vitals')
+                .insert(validPayloads)
+                .select();
+                
             if (error) throw error;
 
             // Audit Log
@@ -237,10 +254,10 @@ export class PatientsController {
                 clinic_id,
                 TenantContext.getUserId(),
                 id,
-                { action: 'add_vital', vital_type: body.vital_type }
+                { action: 'add_vitals', count: validPayloads.length }
             ));
 
-            return { success: true, data };
+            return { success: true, data: Array.isArray(body) || Array.isArray(body?.vitals) ? data : data?.[0] };
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`POST /api/patients/${id}/vitals`, error);

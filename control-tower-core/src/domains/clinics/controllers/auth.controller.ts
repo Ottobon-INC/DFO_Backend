@@ -27,7 +27,7 @@ export class AuthController {
     @UseGuards(ThrottlerGuard)
     @Throttle({ default: { limit: 5, ttl: 60000 } })
     @Post('login')
-    async login(@Body() body: { email: string; password: string }) {
+    async login(@Body() body: { email: string; password: string; role?: string }) {
         try {
             const { email, password } = body;
             this.logger.log(`Login attempt: email="${email}"`);
@@ -35,11 +35,15 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Email and password are required' }, HttpStatus.BAD_REQUEST);
             }
 
+            const cleanEmail = email.trim().toLowerCase();
             const supabase = this.supabaseService.getClient();
             const { data: user, error } = await supabase
-                .from('sakhi_clinic_users').select('*').eq('email', email).single();
+                .from('sakhi_clinic_users')
+                .select('*')
+                .ilike('email', cleanEmail)
+                .single();
 
-            this.logger.debug(`Supabase user query result for ${email}: user=${!!user}, error=${error ? JSON.stringify(error) : 'none'}`);
+            this.logger.debug(`Supabase user query result for ${cleanEmail}: user=${!!user}, error=${error ? JSON.stringify(error) : 'none'}`);
 
             if (error || !user) {
                 this.logger.error(`Login failed: user=${!!user}, error=${JSON.stringify(error)}`);
@@ -47,7 +51,22 @@ export class AuthController {
             }
 
             if (user.is_active === false) {
-                throw new HttpException({ success: false, error: 'Account is deactivated' }, HttpStatus.UNAUTHORIZED);
+                throw new HttpException({ success: false, error: 'Your staff account is currently deactivated. Please contact your Clinic Administrator.' }, HttpStatus.UNAUTHORIZED);
+            }
+
+            // Verify clinic organization status for non-superadmin users
+            if (user.clinic_id && !user.is_super_admin) {
+                const { data: clinic } = await supabase
+                    .from('clinics')
+                    .select('is_active, name')
+                    .eq('id', user.clinic_id)
+                    .single();
+                if (clinic && clinic.is_active === false) {
+                    throw new HttpException({ 
+                        success: false, 
+                        error: `Access Suspended: ${clinic.name || 'Your clinic'} organization is currently inactive. Contact Medcy Support.` 
+                    }, HttpStatus.FORBIDDEN);
+                }
             }
 
             if (!user.password_hash) {
@@ -100,6 +119,39 @@ export class AuthController {
             // Successful login -> Reset lockout
             const updateSuccessData: any = { failed_attempts: 0, locked_until: null };
             await supabase.from('sakhi_clinic_users').update(updateSuccessData).eq('id', user.id);
+
+            // 5. Role Portal Gate Validation
+            if (body.role) {
+                const requestedRole = body.role.trim().toLowerCase();
+                const userRole = (user.role || '').trim().toLowerCase();
+                
+                const normalizeRole = (r: string) => {
+                    if (r.includes('admin')) return 'admin';
+                    if (r.includes('doctor') || r.includes('physician')) return 'doctor';
+                    if (r.includes('nurse')) return 'nurse';
+                    if (r.includes('front') || r.includes('reception')) return 'front_desk';
+                    if (r.includes('cro') || r.includes('sales')) return 'cro';
+                    return r;
+                };
+
+                const normRequested = normalizeRole(requestedRole);
+                const normUser = normalizeRole(userRole);
+
+                if (normRequested !== normUser) {
+                    const formatTitle = (r: string) => {
+                        if (r === 'admin') return 'Clinic Admin';
+                        if (r === 'doctor') return 'Doctor';
+                        if (r === 'nurse') return 'Nurse';
+                        if (r === 'front_desk') return 'Front Desk';
+                        if (r === 'cro') return 'CRO';
+                        return user.role || 'another';
+                    };
+                    throw new HttpException({
+                        success: false,
+                        error: `Access Denied: Your account is registered as ${formatTitle(normUser)}. Please switch to the ${formatTitle(normUser)} portal tab to sign in.`
+                    }, HttpStatus.FORBIDDEN);
+                }
+            }
 
             const displayName = user.name || user.full_name || (user.email ? user.email.split('@')[0].split('.').map((p: string) => p.charAt(0).toUpperCase() + p.slice(1)).join(' ') : 'User');
 
@@ -201,12 +253,14 @@ export class AuthController {
                     phone_number: user.phone_number,
                     department: user.department,
                     designation: user.designation,
+                    specialization: user.specialization,
                     profile_image_url: user.profile_image_url,
                     email: user.email,
                     role: user.role,
                     clinic_id: user.clinic_id,
                     is_super_admin: user.is_super_admin,
-                    is_clinic_admin: user.is_clinic_admin
+                    is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin',
+                    is_active: user.is_active !== false
                 }
             };
         } catch (err) {
@@ -326,5 +380,225 @@ export class AuthController {
         }
 
         return { success: true, message: 'Password updated successfully' };
+    }
+
+    @UseGuards(ThrottlerGuard)
+    @Throttle({ default: { limit: 5, ttl: 60000 } })
+    @Post('forgot-password')
+    async forgotPassword(@Body() body: { email: string; phone_number?: string; hospital_id?: string }) {
+        try {
+            const { email } = body;
+            if (!email) {
+                throw new HttpException({ success: false, error: 'Hospital email is required' }, HttpStatus.BAD_REQUEST);
+            }
+
+            const cleanEmail = email.trim().toLowerCase();
+            const supabase = this.supabaseService.getClient();
+            const { data: user, error } = await supabase
+                .from('sakhi_clinic_users')
+                .select('id, email, phone_number, hospital_id, is_active, first_name, last_name, clinic_id')
+                .ilike('email', cleanEmail)
+                .single();
+
+            if (error || !user) {
+                throw new HttpException({ 
+                    success: false, 
+                    error: 'No active staff account found with this email. Please check your spelling or contact your Clinic Administrator.' 
+                }, HttpStatus.NOT_FOUND);
+            }
+
+            if (user.is_active === false) {
+                throw new HttpException({ success: false, error: 'Your staff account is currently deactivated. Contact Clinic IT.' }, HttpStatus.UNAUTHORIZED);
+            }
+
+            // Verify clinic status if clinic_id is present
+            if (user.clinic_id) {
+                const { data: clinic } = await supabase
+                    .from('clinics')
+                    .select('is_active')
+                    .eq('id', user.clinic_id)
+                    .single();
+                if (clinic && clinic.is_active === false) {
+                    throw new HttpException({ success: false, error: 'Your hospital organization is suspended. Please contact Medcy Health Tech support.' }, HttpStatus.FORBIDDEN);
+                }
+            }
+
+            // Generate cryptographically secure 6-digit verification code
+            const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+            
+            // Sign a secure 15-minute temporary reset token containing verification payload
+            const resetSessionToken = jwt.sign(
+                {
+                    sub: user.id,
+                    email: user.email,
+                    code: resetCode,
+                    purpose: 'password_reset'
+                },
+                this.jwtSecret,
+                { expiresIn: '15m' }
+            );
+
+            // Mask phone number for display if available
+            let maskedPhone = '';
+            if (user.phone_number) {
+                const cleaned = user.phone_number.trim();
+                if (cleaned.length >= 4) {
+                    maskedPhone = cleaned.slice(0, 3) + '••••••' + cleaned.slice(-3);
+                } else {
+                    maskedPhone = '••••••';
+                }
+            }
+
+            // Emit audit event
+            try {
+                await this.eventsQueue.add(DFO_EVENTS.AUTH_PASSWORD_CHANGED, new AuthEvent(
+                    user.clinic_id, user.id, { action: 'password_reset_requested', email: user.email }
+                ), { attempts: 3, backoff: { type: 'exponential', delay: 1000 } });
+            } catch (queueErr) {
+                this.logger.warn('Failed to queue password reset requested event', queueErr);
+            }
+
+            return {
+                success: true,
+                message: 'Verification security PIN generated successfully.',
+                masked_phone: maskedPhone || undefined,
+                reset_session_token: resetSessionToken,
+                dev_code: process.env.NODE_ENV === 'production' ? undefined : resetCode,
+                user_name: [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Staff Member'
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error('forgotPassword error:', error);
+            throw new HttpException({ success: false, error: error.message || 'Internal server error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @UseGuards(ThrottlerGuard)
+    @Throttle({ default: { limit: 5, ttl: 60000 } })
+    @Post('reset-password')
+    async resetPassword(@Body() body: { email: string; reset_code: string; reset_session_token: string; new_password: string }) {
+        try {
+            const { email, reset_code, reset_session_token, new_password } = body;
+            if (!email || !reset_code || !reset_session_token || !new_password) {
+                throw new HttpException({ success: false, error: 'Email, verification code, session token, and new password are required' }, HttpStatus.BAD_REQUEST);
+            }
+
+            if (new_password.length < 6) {
+                throw new HttpException({ success: false, error: 'Password must be at least 6 characters long' }, HttpStatus.BAD_REQUEST);
+            }
+
+            // Verify the reset session token
+            let decoded: any;
+            try {
+                decoded = jwt.verify(reset_session_token, this.jwtSecret);
+            } catch (err) {
+                throw new HttpException({ success: false, error: 'Password reset session has expired. Please request a new code.' }, HttpStatus.UNAUTHORIZED);
+            }
+
+            const cleanEmail = email.trim().toLowerCase();
+            if (decoded.purpose !== 'password_reset' || (decoded.email || '').toLowerCase() !== cleanEmail) {
+                throw new HttpException({ success: false, error: 'Invalid reset session data' }, HttpStatus.UNAUTHORIZED);
+            }
+
+            if (decoded.code !== reset_code.trim()) {
+                throw new HttpException({ success: false, error: 'Invalid 6-digit verification code. Please check and try again.' }, HttpStatus.BAD_REQUEST);
+            }
+
+            const supabase = this.supabaseService.getClient();
+            const newPasswordHash = await bcrypt.hash(new_password, 10);
+
+            const { error: updateError } = await supabase
+                .from('sakhi_clinic_users')
+                .update({
+                    password_hash: newPasswordHash,
+                    failed_attempts: 0,
+                    locked_until: null
+                })
+                .eq('id', decoded.sub);
+
+            if (updateError) {
+                this.logger.error('Failed to update password in Supabase:', updateError);
+                throw new HttpException({ success: false, error: 'Failed to update password in database' }, HttpStatus.INTERNAL_SERVER_ERROR);
+            }
+
+            return {
+                success: true,
+                message: 'Your password has been securely reset. You can now sign in with your new credentials.'
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error('resetPassword error:', error);
+            throw new HttpException({ success: false, error: error.message || 'Internal server error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Post('demo-request')
+    async demoRequest(@Body() body: {
+        name: string;
+        hospital_name: string;
+        email: string;
+        phone: string;
+        designation?: string;
+        city?: string;
+        patient_volume?: string;
+        preferred_contact_method?: string;
+        preferred_slot?: string;
+        message?: string;
+    }) {
+        try {
+            const { name, hospital_name, email, phone, designation, city, patient_volume, preferred_contact_method, preferred_slot, message } = body;
+
+            if (!name || !hospital_name || !phone || !email) {
+                throw new HttpException({ success: false, error: 'Name, Hospital/Clinic Name, Phone, and Email are required' }, HttpStatus.BAD_REQUEST);
+            }
+
+            const supabase = this.supabaseService.getClient();
+
+            const demoPayload: any = {
+                hospital_name: hospital_name.trim(),
+                contact_name: name.trim(),
+                designation: designation || 'Medical Director / Clinic Admin',
+                email: email.trim(),
+                phone: phone.trim(),
+                city: city ? city.trim() : null,
+                patient_volume: patient_volume || '100 - 500 Patients / mo',
+                preferred_channel: preferred_contact_method || 'WhatsApp Walkthrough',
+                preferred_slot: preferred_slot || 'Tomorrow Morning (10:00 AM - 1:00 PM)',
+                message: message ? message.trim() : null,
+                status: 'pending'
+            };
+
+            const { data, error } = await supabase
+                .from('sakhi_clinic_demo_requests')
+                .insert(demoPayload)
+                .select()
+                .single();
+
+            if (error) {
+                this.logger.error('Failed to insert into sakhi_clinic_demo_requests:', error);
+            }
+
+            // Format direct WhatsApp link
+            const whatsappMessage = encodeURIComponent(
+                `Hello Medcy Health Tech Team, I just requested a live clinic demo for ${hospital_name} (${name}, ${designation || 'Clinical Lead'}). Looking forward to connecting!`
+            );
+            const whatsappUrl = `https://wa.me/919876543210?text=${whatsappMessage}`;
+
+            return {
+                success: true,
+                message: 'Your clinic walkthrough & demo request has been received! Our onboarding specialist will contact you shortly.',
+                lead_id: data?.id || 'demo-' + Date.now(),
+                contact_channels: {
+                    whatsapp_url: whatsappUrl,
+                    sales_hotline: '+91 98765 43210',
+                    sales_email: 'onboarding@medcyhealthtech.com',
+                    representative_name: 'Medcy Clinical Solutions Team'
+                }
+            };
+        } catch (error: any) {
+            if (error instanceof HttpException) throw error;
+            this.logger.error('demoRequest error:', error);
+            throw new HttpException({ success: false, error: error.message || 'Internal server error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
     }
 }

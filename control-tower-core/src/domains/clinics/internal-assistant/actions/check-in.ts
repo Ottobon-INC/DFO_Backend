@@ -56,8 +56,7 @@ export class CheckInAction {
         const { error: updateError } = await supabase
             .from('sakhi_clinic_appointments')
             .update({
-                status: 'Checked-In',
-                arrived_at: new Date().toISOString() // arrived_at maps to Checked-In/Arrived
+                status: 'Checked-In'
             })
             .eq('id', appointmentId);
 

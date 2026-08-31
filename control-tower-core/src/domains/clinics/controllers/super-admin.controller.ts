@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards, Req } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Query, Body, Logger, HttpException, HttpStatus, UseGuards, Req } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ClinicsSupabaseService } from '../services/clinics-supabase.service';
@@ -334,6 +334,54 @@ export class SuperAdminController {
             return { success: true, message: 'Clinic completely deleted' };
         } catch (error: any) {
             this.logger.error(`DELETE /api/v1/superadmin/clinics/${id}`, error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Get('demo-requests')
+    async listDemoRequests(@Query('status') status?: string) {
+        const supabase = this.supabaseService.getClient();
+        try {
+            let query = supabase
+                .from('sakhi_clinic_demo_requests')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (status) {
+                query = query.eq('status', status);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+
+            return { success: true, data: data || [] };
+        } catch (error: any) {
+            this.logger.error('GET /api/v1/superadmin/demo-requests', error);
+            throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    @Patch('demo-requests/:id')
+    async updateDemoRequestStatus(@Param('id') id: string, @Body() body: { status?: string; notes?: string; assigned_to?: string }) {
+        const supabase = this.supabaseService.getClient();
+        try {
+            const updatePayload: any = { updated_at: new Date().toISOString() };
+            if (body.status) updatePayload.status = body.status;
+            if (body.notes) updatePayload.notes = body.notes;
+            if (body.assigned_to) updatePayload.assigned_to = body.assigned_to;
+
+            const { data, error } = await supabase
+                .from('sakhi_clinic_demo_requests')
+                .update(updatePayload)
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            return { success: true, data };
+        } catch (error: any) {
+            this.logger.error(`PATCH /api/v1/superadmin/demo-requests/${id}`, error);
             throw new HttpException({ success: false, error: error?.message || 'Internal Server Error' }, HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
