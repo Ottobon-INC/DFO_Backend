@@ -32,7 +32,7 @@ export class SchedulesService {
     async saveSchedules(clinicId: string, doctorId: string, schedules: any[], startDate?: string, endDate?: string): Promise<any[]> {
         const supabase = this.supabaseService.getClient();
 
-        // 1. Delete existing schedules for this doctor in this clinic (this acts as a "last saved template")
+        // 1. Delete existing template schedules for this doctor in this clinic
         const { error: deleteError } = await supabase
             .from('sakhi_clinic_doctor_schedules')
             .delete()
@@ -54,6 +54,8 @@ export class SchedulesService {
                 end_time: s.end_time,
                 slot_duration_minutes: s.slot_duration_minutes || 15,
                 slot_capacity: s.slot_capacity || 1,
+                session_name: s.session_name || (parseInt(s.start_time.split(':')[0]) < 14 ? 'Morning Session' : 'Evening Session'),
+                room_number: s.room_number || null,
                 is_active: true
             }));
 
@@ -67,43 +69,52 @@ export class SchedulesService {
                 throw new HttpException('Failed to save schedules', HttpStatus.INTERNAL_SERVER_ERROR);
             }
             
-            // 3. Trigger async generation of availability slots
-            this.generateAvailabilitySlots(clinicId, doctorId, data, startDate, endDate).catch(err => {
-                this.logger.error(`Failed to generate async slots: ${err.message}`);
-            });
+            // 3. Synchronously generate availability slots so they are immediately available
+            await this.generateAvailabilitySlots(clinicId, doctorId, data, startDate, endDate);
 
-            return data;
+            return data || [];
         }
 
         return [];
     }
 
     /**
-     * Automatically generates individual slots for a specific date range (or 30 days if not provided).
+     * Generates individual consultation slots for a specific date range.
      */
     async generateAvailabilitySlots(clinicId: string, doctorId: string, schedules: any[], startDate?: string, endDate?: string) {
         if (!schedules || schedules.length === 0) return;
         
         const supabase = this.supabaseService.getClient();
         
-        let start = new Date();
-        start.setHours(0,0,0,0);
-        let end = new Date(start);
-        end.setDate(start.getDate() + 29); // next 30 days default
+        // Calculate date range (default 30 days starting from today)
+        const now = new Date();
+        const start = startDate ? new Date(startDate) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const end = endDate ? new Date(endDate) : new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30);
 
-        if (startDate && endDate) {
-            start = new Date(startDate);
-            end = new Date(endDate);
-            this.logger.log(`Generating slots for doctor ${doctorId} from ${startDate} to ${endDate}...`);
-        } else {
-            this.logger.log(`Generating slots for doctor ${doctorId} for next 30 days...`);
+        const dateStrStart = this.formatLocalDate(start);
+        const dateStrEnd = this.formatLocalDate(end);
+
+        this.logger.log(`Generating availability slots for doctor ${doctorId} from ${dateStrStart} to ${dateStrEnd}`);
+
+        // Fetch existing leaves for this doctor in this date range
+        let doctorLeaves: string[] = [];
+        try {
+            const { data: leavesData } = await supabase
+                .from('sakhi_clinic_doctor_leaves')
+                .select('leave_date')
+                .eq('clinic_id', clinicId)
+                .eq('doctor_id', doctorId)
+                .gte('leave_date', dateStrStart)
+                .lte('leave_date', dateStrEnd);
+            if (leavesData) {
+                doctorLeaves = leavesData.map(l => l.leave_date);
+            }
+        } catch (e) {
+            // Leave table might be optional
         }
 
-        const dateStrStart = start.toISOString().split('T')[0];
-        const dateStrEnd = end.toISOString().split('T')[0];
-
-        // First, delete any unbooked slots in the target range to prevent orphaned slots
-        const { error: deleteSlotsError } = await supabase
+        // Delete unbooked slots in the target range to prevent stale slot records
+        await supabase
             .from('sakhi_clinic_availability_slots')
             .delete()
             .eq('clinic_id', clinicId)
@@ -112,71 +123,73 @@ export class SchedulesService {
             .lte('slot_date', dateStrEnd)
             .eq('booked_count', 0);
 
-        if (deleteSlotsError) {
-            this.logger.error(`Failed to delete unbooked slots: ${deleteSlotsError.message}`);
-        }
-
         const slotsToInsert: any[] = [];
         
-        // Loop through the dates
-        for (let currentDate = new Date(start); currentDate <= end; currentDate.setDate(currentDate.getDate() + 1)) {
-            const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
-            const dateStr = currentDate.toISOString().split('T')[0];
+        // Loop through each calendar day in the date range
+        const cursorDate = new Date(start);
+        while (cursorDate <= end) {
+            const dayOfWeek = cursorDate.getDay(); // 0 = Sunday, 1 = Monday ... 6 = Saturday
+            const dateStr = this.formatLocalDate(cursorDate);
+            const isOnLeave = doctorLeaves.includes(dateStr);
 
-            // Find matching schedules for this day of the week
+            // Find matching schedules for this day of week
             const daySchedules = schedules.filter(s => s.day_of_week === dayOfWeek);
 
             for (const schedule of daySchedules) {
-                const startParts = schedule.start_time.split(':');
-                const endParts = schedule.end_time.split(':');
+                const [startH, startM] = schedule.start_time.split(':').map(Number);
+                const [endH, endM] = schedule.end_time.split(':').map(Number);
                 
-                let currentSlotTime = new Date(currentDate);
-                currentSlotTime.setHours(parseInt(startParts[0]), parseInt(startParts[1]), 0, 0);
-                
-                const endSlotTime = new Date(currentDate);
-                endSlotTime.setHours(parseInt(endParts[0]), parseInt(endParts[1]), 0, 0);
-
+                let currentMinutes = startH * 60 + startM;
+                const endMinutes = endH * 60 + endM;
                 const slotDuration = schedule.slot_duration_minutes || 15;
 
-                // Create slots in increments of slotDuration until endSlotTime
-                while (currentSlotTime < endSlotTime) {
-                    const slotStartTimeStr = `${String(currentSlotTime.getHours()).padStart(2, '0')}:${String(currentSlotTime.getMinutes()).padStart(2, '0')}:00`;
-                    
-                    // Increment
-                    currentSlotTime.setMinutes(currentSlotTime.getMinutes() + slotDuration);
-                    
-                    const slotEndTimeStr = `${String(currentSlotTime.getHours()).padStart(2, '0')}:${String(currentSlotTime.getMinutes()).padStart(2, '0')}:00`;
+                while (currentMinutes + slotDuration <= endMinutes) {
+                    const sH = Math.floor(currentMinutes / 60);
+                    const sM = currentMinutes % 60;
+                    const nextMinutes = currentMinutes + slotDuration;
+                    const eH = Math.floor(nextMinutes / 60);
+                    const eM = nextMinutes % 60;
 
-                    // Push slot payload
+                    const startTimeStr = `${String(sH).padStart(2, '0')}:${String(sM).padStart(2, '0')}:00`;
+                    const endTimeStr = `${String(eH).padStart(2, '0')}:${String(eM).padStart(2, '0')}:00`;
+
                     slotsToInsert.push({
                         clinic_id: clinicId,
                         doctor_id: doctorId,
                         slot_date: dateStr,
-                        start_time: slotStartTimeStr,
-                        end_time: slotEndTimeStr,
+                        start_time: startTimeStr,
+                        end_time: endTimeStr,
                         capacity: schedule.slot_capacity || 1,
-                        booked_count: 0
+                        booked_count: 0,
+                        status: isOnLeave ? 'LEAVE' : 'AVAILABLE',
+                        block_reason: isOnLeave ? 'Doctor on Leave' : null
                     });
+
+                    currentMinutes = nextMinutes;
                 }
             }
+
+            cursorDate.setDate(cursorDate.getDate() + 1);
         }
 
         if (slotsToInsert.length > 0) {
-            // Upsert or insert slots
-            // Assuming (doctor_id, slot_date, start_time) is unique
-            const { error } = await supabase
-                .from('sakhi_clinic_availability_slots')
-                .upsert(slotsToInsert, { onConflict: 'doctor_id, slot_date, start_time', ignoreDuplicates: true });
-
-            if (error) {
-                this.logger.error(`Error inserting generated slots: ${error.message}`);
-            } else {
-                this.logger.log(`Successfully generated ${slotsToInsert.length} slots for doctor ${doctorId}`);
+            // Batch insert generated slots (batches of 100 to avoid payload limits)
+            const batchSize = 100;
+            for (let i = 0; i < slotsToInsert.length; i += batchSize) {
+                const batch = slotsToInsert.slice(i, i + batchSize);
+                const { error: upsertErr } = await supabase
+                    .from('sakhi_clinic_availability_slots')
+                    .upsert(batch, { onConflict: 'doctor_id, slot_date, start_time', ignoreDuplicates: true });
+                
+                if (upsertErr) {
+                    this.logger.error(`Error upserting slots batch: ${upsertErr.message}`);
+                }
             }
+            this.logger.log(`Successfully generated ${slotsToInsert.length} slots for doctor ${doctorId}`);
         }
     }
 
-    async getAvailableSlots(clinicId: string, doctorId: string, date?: string): Promise<any[]> {
+    async getAvailableSlots(clinicId: string, doctorId: string, startDate?: string, endDate?: string): Promise<any[]> {
         const supabase = this.supabaseService.getClient();
         let query = supabase
             .from('sakhi_clinic_availability_slots')
@@ -186,10 +199,12 @@ export class SchedulesService {
             .order('slot_date', { ascending: true })
             .order('start_time', { ascending: true });
 
-        if (date) {
-            query = query.eq('slot_date', date);
+        if (startDate && endDate) {
+            query = query.gte('slot_date', startDate).lte('slot_date', endDate);
+        } else if (startDate) {
+            query = query.eq('slot_date', startDate);
         } else {
-            const today = new Date().toISOString().split('T')[0];
+            const today = this.formatLocalDate(new Date());
             query = query.gte('slot_date', today);
         }
 
@@ -200,7 +215,91 @@ export class SchedulesService {
             throw new HttpException('Failed to fetch availability slots', HttpStatus.INTERNAL_SERVER_ERROR);
         }
 
-        // Only return slots that have capacity remaining
-        return (data || []).filter(slot => slot.booked_count < slot.capacity);
+        return data || [];
+    }
+
+    async setDoctorLeave(clinicId: string, doctorId: string, leaveDate: string, leaveType: string = 'Full Day', reason: string = 'Doctor on Leave') {
+        const supabase = this.supabaseService.getClient();
+
+        // 1. Record in leaves table
+        try {
+            await supabase
+                .from('sakhi_clinic_doctor_leaves')
+                .upsert({
+                    clinic_id: clinicId,
+                    doctor_id: doctorId,
+                    leave_date: leaveDate,
+                    leave_type: leaveType,
+                    reason: reason,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: 'doctor_id, leave_date' });
+        } catch (e) {
+            this.logger.warn(`Leaves table upsert notice: ${e.message}`);
+        }
+
+        // 2. Mark unbooked slots on that day as 'LEAVE'
+        await supabase
+            .from('sakhi_clinic_availability_slots')
+            .update({ status: 'LEAVE', block_reason: reason })
+            .eq('clinic_id', clinicId)
+            .eq('doctor_id', doctorId)
+            .eq('slot_date', leaveDate)
+            .eq('booked_count', 0);
+
+        return { success: true, message: `Doctor marked on leave for ${leaveDate}` };
+    }
+
+    async removeDoctorLeave(clinicId: string, doctorId: string, leaveDate: string) {
+        const supabase = this.supabaseService.getClient();
+
+        // 1. Delete from leaves table
+        try {
+            await supabase
+                .from('sakhi_clinic_doctor_leaves')
+                .delete()
+                .eq('clinic_id', clinicId)
+                .eq('doctor_id', doctorId)
+                .eq('leave_date', leaveDate);
+        } catch (e) {}
+
+        // 2. Reset unbooked slots on that day back to 'AVAILABLE'
+        await supabase
+            .from('sakhi_clinic_availability_slots')
+            .update({ status: 'AVAILABLE', block_reason: null })
+            .eq('clinic_id', clinicId)
+            .eq('doctor_id', doctorId)
+            .eq('slot_date', leaveDate)
+            .eq('booked_count', 0);
+
+        return { success: true, message: `Leave removed for ${leaveDate}` };
+    }
+
+    async getDoctorLeaves(clinicId: string, doctorId: string, startDate?: string, endDate?: string): Promise<any[]> {
+        const supabase = this.supabaseService.getClient();
+        try {
+            let query = supabase
+                .from('sakhi_clinic_doctor_leaves')
+                .select('*')
+                .eq('clinic_id', clinicId)
+                .eq('doctor_id', doctorId)
+                .order('leave_date', { ascending: true });
+
+            if (startDate && endDate) {
+                query = query.gte('leave_date', startDate).lte('leave_date', endDate);
+            }
+
+            const { data } = await query;
+            return data || [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    private formatLocalDate(d: Date): string {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 }
+
