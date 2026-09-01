@@ -34,7 +34,8 @@ export class AppointmentsController {
         @Query('patient_id') patientId?: string,
         @Query('doctor_id') doctorId?: string,
         @Query('start_date') startDate?: string,
-        @Query('end_date') endDate?: string
+        @Query('end_date') endDate?: string,
+        @Query('today_only') todayOnly?: string
     ) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
@@ -50,10 +51,25 @@ export class AppointmentsController {
                 .select(`id, patient_id, lead_id, doctor_id, appointment_date, start_time, end_time, type, status, queue_status, token_number, visit_reason, resource_id, patient_name_snapshot, sex_snapshot, doctor_name_snapshot, patient_phone_snapshot, patient_dob_snapshot, patient_age_snapshot, cancellation_reason, cancelled_at, created_at, doctor:sakhi_clinic_users!doctor_id(first_name, last_name), patient:sakhi_clinic_patients!patient_id(name)`, { count: 'exact' })
                 .eq('clinic_id', clinic_id);
 
-            if (date) query = query.eq('appointment_date', date);
-            if (startDate) query = query.gte('appointment_date', startDate);
-            if (endDate) query = query.lte('appointment_date', endDate);
-            if (status) query = query.eq('status', status);
+            if (todayOnly === 'true' && !date && !startDate && !endDate) {
+                const now = new Date();
+                const todayStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+                query = query.eq('appointment_date', todayStr);
+            } else {
+                if (date) query = query.eq('appointment_date', date);
+                if (startDate) query = query.gte('appointment_date', startDate);
+                if (endDate) query = query.lte('appointment_date', endDate);
+            }
+
+            if (status) {
+                if (status.includes(',')) {
+                    const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+                    query = query.in('status', statuses);
+                } else {
+                    query = query.eq('status', status);
+                }
+            }
+
             if (patientId && this.utils.isUuid(patientId)) query = query.eq('patient_id', patientId);
             if (doctorId && this.utils.isUuid(doctorId)) query = query.eq('doctor_id', doctorId);
 
@@ -895,6 +911,126 @@ export class AppointmentsController {
         // Or simply rely on the count of appointments that ALREADY have a token today.
         const nextQueueNumber = (appointmentsCount || 0) + 1;
         return `${prefix}${nextQueueNumber}`;
+    }
+
+    @Post('reconcile-stale')
+    async reconcileStale(@Query('date') dateLimit?: string) {
+        const clinic_id = TenantContext.getClinicId();
+        if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
+        const result = await this.reconcileStaleAppointments(clinic_id, dateLimit);
+        return { success: true, ...result };
+    }
+
+    async reconcileStaleAppointments(clinic_id: string, dateLimit?: string) {
+        const supabase = this.supabaseService.getClient();
+        const now = new Date();
+        const localToday = dateLimit || new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
+        try {
+            // Find all appointments before today that are still in an open / unfinalized state
+            const { data: staleAppts, error: fetchErr } = await supabase
+                .from('sakhi_clinic_appointments')
+                .select('id, patient_id, doctor_id, appointment_date, start_time, status, queue_status')
+                .eq('clinic_id', clinic_id)
+                .lt('appointment_date', localToday)
+                .in('status', ['Checked-In', 'In-Consultation', 'Arrived', 'Scheduled', 'Expected']);
+
+            if (fetchErr) {
+                this.logger.error('Failed to query stale appointments', fetchErr);
+                throw fetchErr;
+            }
+
+            if (!staleAppts || staleAppts.length === 0) {
+                return { reconciled_count: 0, completed: 0, no_show: 0, canceled: 0 };
+            }
+
+            let completedCount = 0;
+            let noShowCount = 0;
+            let canceledCount = 0;
+
+            for (const appt of staleAppts) {
+                let hasClinicalData = false;
+
+                if (appt.patient_id) {
+                    const [notesRes, rxRes, vitalsRes] = await Promise.all([
+                        supabase.from('sakhi_clinical_notes')
+                            .select('id')
+                            .eq('clinic_id', clinic_id)
+                            .eq('patient_id', appt.patient_id)
+                            .limit(1),
+                        supabase.from('sakhi_clinic_prescriptions')
+                            .select('id')
+                            .eq('clinic_id', clinic_id)
+                            .eq('patient_id', appt.patient_id)
+                            .limit(1),
+                        supabase.from('sakhi_clinic_patient_vitals')
+                            .select('id')
+                            .eq('patient_id', appt.patient_id)
+                            .limit(1)
+                    ]);
+
+                    if ((notesRes.data && notesRes.data.length > 0) || (rxRes.data && rxRes.data.length > 0) || (vitalsRes.data && vitalsRes.data.length > 0)) {
+                        hasClinicalData = true;
+                    }
+                }
+
+                if (hasClinicalData) {
+                    await supabase
+                        .from('sakhi_clinic_appointments')
+                        .update({
+                            status: 'Completed',
+                            queue_status: 'COMPLETED',
+                            completed_at: new Date().toISOString()
+                        })
+                        .eq('id', appt.id)
+                        .eq('clinic_id', clinic_id);
+                    completedCount++;
+                } else if (appt.status === 'Checked-In' || appt.status === 'Arrived' || appt.status === 'In-Consultation') {
+                    await supabase
+                        .from('sakhi_clinic_appointments')
+                        .update({
+                            status: 'No Show',
+                            queue_status: 'NO_SHOW',
+                            cancellation_reason: 'Auto-closed: Unfinalized previous shift check-in',
+                            cancelled_at: new Date().toISOString()
+                        })
+                        .eq('id', appt.id)
+                        .eq('clinic_id', clinic_id);
+                    
+                    if (appt.doctor_id && appt.appointment_date && appt.start_time) {
+                        await this.utils.decrementSlotBooking(supabase, appt.doctor_id, appt.appointment_date, appt.start_time);
+                    }
+                    noShowCount++;
+                } else {
+                    await supabase
+                        .from('sakhi_clinic_appointments')
+                        .update({
+                            status: 'No Show',
+                            queue_status: 'NO_SHOW',
+                            cancellation_reason: 'Auto-closed: Unattended scheduled appointment',
+                            cancelled_at: new Date().toISOString()
+                        })
+                        .eq('id', appt.id)
+                        .eq('clinic_id', clinic_id);
+
+                    if (appt.doctor_id && appt.appointment_date && appt.start_time) {
+                        await this.utils.decrementSlotBooking(supabase, appt.doctor_id, appt.appointment_date, appt.start_time);
+                    }
+                    canceledCount++;
+                }
+            }
+
+            this.logger.log(`Reconciled ${staleAppts.length} stale appointments for clinic ${clinic_id} (Completed: ${completedCount}, No Show: ${noShowCount}, Canceled/Other: ${canceledCount})`);
+            return {
+                reconciled_count: staleAppts.length,
+                completed: completedCount,
+                no_show: noShowCount,
+                canceled: canceledCount
+            };
+        } catch (error: any) {
+            this.logger.error('reconcileStaleAppointments error', error);
+            throw error;
+        }
     }
 }
 

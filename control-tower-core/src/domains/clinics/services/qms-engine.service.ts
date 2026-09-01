@@ -186,4 +186,60 @@ export class QmsEngineService {
             }
         }
     }
+
+    // --- STALE APPOINTMENTS RECONCILIATION CRON ---
+    @Cron(CronExpression.EVERY_HOUR)
+    async sweepStaleAppointments() {
+        this.logger.debug('Running sweeper for stale past-date appointments across clinics...');
+        const supabase = (this.supabaseService as any).getAdminClient ? (this.supabaseService as any).getAdminClient() : this.supabaseService.getClient();
+
+        const now = new Date();
+        const todayStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
+        try {
+            const { data: staleAppts, error } = await supabase
+                .from('sakhi_clinic_appointments')
+                .select('id, clinic_id, doctor_id, patient_id, appointment_date, start_time, status')
+                .lt('appointment_date', todayStr)
+                .in('status', ['Checked-In', 'Arrived', 'In-Consultation', 'Scheduled', 'Expected'])
+                .limit(100);
+
+            if (error || !staleAppts || staleAppts.length === 0) return;
+
+            for (const appt of staleAppts) {
+                try {
+                    let hasClinicalData = false;
+                    if (appt.patient_id) {
+                        const [notes, rx, vitals] = await Promise.all([
+                            supabase.from('sakhi_clinical_notes').select('id').eq('patient_id', appt.patient_id).limit(1),
+                            supabase.from('sakhi_clinic_prescriptions').select('id').eq('patient_id', appt.patient_id).limit(1),
+                            supabase.from('sakhi_clinic_patient_vitals').select('id').eq('patient_id', appt.patient_id).limit(1)
+                        ]);
+                        hasClinicalData = Boolean((notes.data && notes.data.length > 0) || (rx.data && rx.data.length > 0) || (vitals.data && vitals.data.length > 0));
+                    }
+
+                    const nextStatus = hasClinicalData ? 'Completed' : 'No Show';
+                    const nextQueueStatus = hasClinicalData ? 'COMPLETED' : 'NO_SHOW';
+
+                    const updatePayload: any = {
+                        status: nextStatus,
+                        queue_status: nextQueueStatus,
+                        cancellation_reason: hasClinicalData ? undefined : 'Auto-closed: Unfinalized previous shift check-in',
+                    };
+                    if (hasClinicalData) {
+                        updatePayload.completed_at = new Date().toISOString();
+                    } else {
+                        updatePayload.cancelled_at = new Date().toISOString();
+                    }
+
+                    await supabase.from('sakhi_clinic_appointments').update(updatePayload).eq('id', appt.id);
+                } catch (innerErr: any) {
+                    this.logger.error(`Failed to reconcile stale appointment ${appt.id}: ${innerErr.message}`);
+                }
+            }
+            this.logger.log(`Sweeper reconciled ${staleAppts.length} past-date open appointments`);
+        } catch (e: any) {
+            this.logger.error(`Error in sweepStaleAppointments: ${e.message}`);
+        }
+    }
 }
