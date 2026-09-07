@@ -178,7 +178,7 @@ export class PatientsController {
                 supabase.from('sakhi_clinic_patient_vitals')
                     .select('vital_type, vital_value, recorded_at')
                     .eq('patient_id', id)
-                    .order('recorded_at', { ascending: false }).limit(5),
+                    .order('recorded_at', { ascending: false }).limit(100),
                 supabase.from('sakhi_clinic_allergies')
                     .select('allergy_name, severity')
                     .eq('patient_id', id).eq('clinic_id', clinic_id),
