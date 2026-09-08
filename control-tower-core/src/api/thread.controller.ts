@@ -124,10 +124,6 @@ export class ThreadController {
         );
     }
 
-    @Get('audit/all')
-    async getAudits() {
-        return this.auditService.getAll();
-    }
 
     private sanitizeMetadata(metadata: Record<string, any>): Record<string, any> {
         if (!metadata) return {};

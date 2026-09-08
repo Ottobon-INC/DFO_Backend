@@ -21,4 +21,8 @@ export class CreateClinicDto {
   @IsNotEmpty()
   @IsIn(['Doctor', 'CRO', 'Receptionist', 'Nurse'])
   owner_role: string;
+
+  @IsString()
+  @IsOptional()
+  specialty?: string;
 }

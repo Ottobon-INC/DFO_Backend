@@ -54,13 +54,20 @@ export class AuthController {
                 throw new HttpException({ success: false, error: 'Your staff account is currently deactivated. Please contact your Clinic Administrator.' }, HttpStatus.UNAUTHORIZED);
             }
 
+            let clinicSpecialty = 'General';
+
             // Verify clinic organization status for non-superadmin users
             if (user.clinic_id && !user.is_super_admin) {
                 const { data: clinic } = await supabase
                     .from('clinics')
-                    .select('is_active, name')
+                    .select('is_active, name, specialty')
                     .eq('id', user.clinic_id)
                     .single();
+                
+                if (clinic) {
+                    clinicSpecialty = clinic.specialty || 'General';
+                }
+
                 if (clinic && clinic.is_active === false) {
                     throw new HttpException({ 
                         success: false, 
@@ -188,6 +195,7 @@ export class AuthController {
                 email: user.email,
                 role: user.role,
                 clinic_id: user.clinic_id,
+                clinic_specialty: clinicSpecialty,
                 is_super_admin: user.is_super_admin,
                 is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin',
                 specialization: user.specialization,
@@ -241,6 +249,18 @@ export class AuthController {
 
             if (error || !user) throw new Error('User not found in DB');
 
+            let clinicSpecialty = 'General';
+            if (user.clinic_id && !user.is_super_admin) {
+                const { data: clinic } = await supabase
+                    .from('clinics')
+                    .select('specialty')
+                    .eq('id', user.clinic_id)
+                    .single();
+                if (clinic) {
+                    clinicSpecialty = clinic.specialty || 'General';
+                }
+            }
+
             return {
                 success: true,
                 user: {
@@ -258,6 +278,7 @@ export class AuthController {
                     email: user.email,
                     role: user.role,
                     clinic_id: user.clinic_id,
+                    clinic_specialty: clinicSpecialty,
                     is_super_admin: user.is_super_admin,
                     is_clinic_admin: user.is_clinic_admin || user.role === 'admin' || user.role === 'Admin',
                     is_active: user.is_active !== false

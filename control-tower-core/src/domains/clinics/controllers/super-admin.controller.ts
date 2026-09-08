@@ -25,7 +25,7 @@ export class SuperAdminController {
 
     @Post('clinics')
     async createClinic(@Req() req: any, @Body() body: CreateClinicDto) {
-        const { clinic_name, owner_name, owner_email, owner_role, request_id } = body;
+        const { clinic_name, owner_name, owner_email, owner_role, request_id, specialty } = body;
         const supabase = this.supabaseService.getClient();
         const super_admin_id = req.user?.sub;
 
@@ -90,11 +90,20 @@ export class SuperAdminController {
                 this.logger.log(`Idempotent hit for clinic creation request ${idempotency_key}`);
             }
 
+            // Update clinic with specialty if provided
+            if (specialty && rpcData?.clinic_id) {
+                try {
+                    await supabase.from('clinics').update({ specialty }).eq('id', rpcData.clinic_id);
+                } catch (err) {
+                    this.logger.error('Failed to update clinic specialty', err);
+                }
+            }
+
             return { 
                 success: true, 
                 message: isIdempotent ? 'Clinic already created (idempotent request)' : 'Clinic and Admin created successfully',
                 data: {
-                    clinic: { id: rpcData.clinic_id, name: clinic_name },
+                    clinic: { id: rpcData.clinic_id, name: clinic_name, specialty },
                     admin: { id: rpcData.admin_id, name: owner_name, email: owner_email, role, clinic_id: rpcData.clinic_id, is_clinic_admin: true }
                 } 
             };

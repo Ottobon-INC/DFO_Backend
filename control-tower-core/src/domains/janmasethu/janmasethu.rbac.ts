@@ -29,8 +29,13 @@ export class JanmasethuRbacService {
 
     constructor(private readonly scopePolicy: JanmasethuScopePolicy) {}
 
-    hasPermission(role: JanmasethuUserRole, permission: JanmasethuPermission): boolean {
-        return this.permissionMatrix[role]?.includes(permission) || false;
+    private getRole(role: string): JanmasethuUserRole {
+        if (!role) return '' as JanmasethuUserRole;
+        return role.toUpperCase() as JanmasethuUserRole;
+    }
+
+    hasPermission(role: JanmasethuUserRole | string, permission: JanmasethuPermission): boolean {
+        return this.permissionMatrix[this.getRole(role)]?.includes(permission) || false;
     }
 
     canViewThread(user: JanmasethuUserContext, thread: Thread): boolean {
@@ -39,13 +44,15 @@ export class JanmasethuRbacService {
         // Enforce symmetrical status visibility logic with Scope Policy
         if (!this.scopePolicy.canView(user, thread)) return false;
 
-        if (user.role === JanmasethuUserRole.CRO) return true;
+        const role = this.getRole(user.role);
 
-        if (user.role === JanmasethuUserRole.DOCTOR) {
+        if (role === JanmasethuUserRole.CRO) return true;
+
+        if (role === JanmasethuUserRole.DOCTOR) {
             return thread.assigned_user_id === user.id || thread.assigned_role === 'DOCTOR_QUEUE';
         }
 
-        if (user.role === JanmasethuUserRole.NURSE) {
+        if (role === JanmasethuUserRole.NURSE) {
             return thread.assigned_user_id === user.id || thread.assigned_role === 'NURSE_QUEUE';
         }
 
@@ -68,21 +75,23 @@ export class JanmasethuRbacService {
     canReply(user: JanmasethuUserContext, thread: Thread): boolean {
         if (!this.hasPermission(user.role, JanmasethuPermission.REPLY)) return false;
 
+        const role = this.getRole(user.role);
+
         // Clinicians must be assigned to reply
-        if (user.role !== JanmasethuUserRole.CRO && thread.assigned_user_id !== user.id) return false;
+        if (role !== JanmasethuUserRole.CRO && thread.assigned_user_id !== user.id) return false;
 
         const status = thread.status as string;
 
         // CRO can reply to red and yellow
-        if (user.role === JanmasethuUserRole.CRO) {
+        if (role === JanmasethuUserRole.CRO) {
             return ['red', 'yellow'].includes(status);
         }
 
-        if (user.role === JanmasethuUserRole.DOCTOR) {
+        if (role === JanmasethuUserRole.DOCTOR) {
             return status === 'red';
         }
 
-        if (user.role === JanmasethuUserRole.NURSE) {
+        if (role === JanmasethuUserRole.NURSE) {
             return ['yellow', 'red'].includes(status);
         }
 
