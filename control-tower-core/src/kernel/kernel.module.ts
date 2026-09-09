@@ -14,6 +14,7 @@ import { RoutingRepository } from '../infrastructure/repositories/routing.reposi
 import { DeadLetterRepository } from '../infrastructure/repositories/dead-letter.repository';
 import { RateLimiterService } from './rate-limiter.service';
 import { ProviderRegistry } from './services/provider-registry.service';
+import { EscalationService } from './escalations/escalation.service';
 import { KernelIngressController } from './api/ingress.controller';
 import type { SentimentProvider, EscalationPolicy, DomainNotifier } from '../contracts';
 
@@ -43,6 +44,7 @@ export interface ControlTowerOptions {
         DeadLetterRepository,
         RateLimiterService,
         ProviderRegistry,
+        EscalationService,
     ],
     controllers: [
         KernelIngressController
@@ -57,6 +59,7 @@ export interface ControlTowerOptions {
         MetricsModule,
         RateLimiterService,
         ProviderRegistry,
+        EscalationService,
     ],
 })
 export class KernelModule implements OnModuleInit {
