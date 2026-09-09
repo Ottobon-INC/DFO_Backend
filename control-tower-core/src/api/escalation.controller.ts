@@ -1,7 +1,7 @@
 import { Controller, Get, Patch, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { EscalationService } from '../kernel/escalations/escalation.service';
 
-@Controller('escalations')
+@Controller('api/escalations')
 export class EscalationController {
     constructor(private readonly escalationService: EscalationService) {}
 
