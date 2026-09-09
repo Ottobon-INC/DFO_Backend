@@ -13,6 +13,7 @@ import { QmsEngineService } from './services/qms-engine.service';
 import { QmsNotificationService } from './services/qms-notification.service';
 import { QmsNotificationProcessor } from './services/qms-notification.processor';
 import { AnalyticsService } from './services/analytics.service';
+import { ClinicsIvfService } from './services/clinics-ivf.service';
 import { SlotEngineService } from './services/slot-engine.service';
 import { QmsGateway } from './gateways/qms.gateway';
 
@@ -46,6 +47,7 @@ import { QMSConfigController } from './controllers/qms-config.controller';
 import { QMSQueueController } from './controllers/qms-queue.controller';
 import { AnalyticsController } from './controllers/analytics.controller';
 import { ClinicsController } from './controllers/clinics.controller';
+import { SpecialtyRecordsController } from './controllers/specialty-records.controller';
 
 // Feature Modules
 import { AwsModule } from '../../infrastructure/aws/aws.module';

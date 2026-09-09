@@ -318,7 +318,17 @@ export class DocumentsController {
             }
 
             // 2. Generate short-lived presigned URL (15 minutes = 900 seconds) forcing it to download with its original name
-            const secureUrl = await this.s3Service.generatePresignedDownloadUrl(document.file_path, 900, document.name);
+            let secureUrl: string;
+            if (document.file_path.startsWith('http://') || document.file_path.startsWith('https://')) {
+                secureUrl = document.file_path;
+            } else {
+                try {
+                    secureUrl = await this.s3Service.generatePresignedDownloadUrl(document.file_path, 900, document.name);
+                } catch (s3Err) {
+                    this.logger.warn(`S3 resolve error for doc ${documentId}:`, s3Err);
+                    throw new HttpException({ success: false, error: 'Document file not found in storage' }, HttpStatus.NOT_FOUND);
+                }
+            }
 
             return {
                 success: true,
@@ -330,10 +340,9 @@ export class DocumentsController {
         } catch (error: any) {
             if (error instanceof HttpException) throw error;
             this.logger.error(`GET /api/v1/clinics/documents/${documentId}/resolve failed:`, error);
-            // DO NOT leak the internal error or S3 path
             throw new HttpException(
-                { success: false, error: 'Document unavailable or access denied' },
-                HttpStatus.INTERNAL_SERVER_ERROR
+                { success: false, error: error?.message || 'Document unavailable' },
+                HttpStatus.NOT_FOUND
             );
         }
     }
