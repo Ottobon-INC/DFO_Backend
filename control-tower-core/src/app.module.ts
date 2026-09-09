@@ -13,6 +13,7 @@ import { AbdmModule } from './domains/abdm/abdm.module';
 import { DebugController } from './api/debug.controller';
 import { ThreadController } from './api/thread.controller';
 import { HealthController } from './api/health.controller';
+import { EscalationController } from './api/escalation.controller';
 import { TenantInterceptor } from './infrastructure/interceptors/tenant.interceptor';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import configuration from './config/configuration';
@@ -45,7 +46,8 @@ const isProduction = process.env.NODE_ENV === 'production';
   controllers: [
     ThreadController,
     HealthController,
-    DebugController
+    DebugController,
+    EscalationController
   ],
   providers: [
     {
