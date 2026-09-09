@@ -16,13 +16,9 @@ export class EscalationService {
             .select('*')
             .eq('status', 'PENDING');
 
-        // Note: The UI currently uses a dummy 'dr_sireesha' user ID which won't match a UUID.
-        // We might want to allow it for demo purposes, or fallback to returning all.
-        // If doctorId is provided, and it's not the default demo id, filter by it.
-        // TEMPORARY: Removing this filter so all escalations show up regardless of doctor_id assignment
-        // if (doctorId && doctorId !== 'dr_sireesha') {
-        //     query = query.eq('doctor_id', doctorId);
-        // }
+        if (doctorId) {
+            query = query.eq('doctor_id', doctorId);
+        }
 
         if (clinicId) {
             query = query.eq('clinic_id', clinicId);
@@ -32,11 +28,7 @@ export class EscalationService {
 
         if (error) {
             this.logger.error(`Error fetching escalations: ${error.message}`, error.details);
-            // Fallback for demo if table doesn't exist
-            if (error.code === '42P01') {
-                return this.getDemoEscalations();
-            }
-            throw new Error('Failed to fetch escalations');
+            return [];
         }
 
         return data || [];
@@ -101,26 +93,5 @@ export class EscalationService {
         }).reverse();
 
         return decryptedMessages;
-    }
-
-    private getDemoEscalations() {
-        return [
-            {
-                id: 'demo-1',
-                patient_name: 'Sara Johnson',
-                reason: 'Critical vital signs anomaly detected.',
-                status: 'PENDING',
-                created_at: new Date().toISOString(),
-                risk_score: 95
-            },
-            {
-                id: 'demo-2',
-                patient_name: 'Priya Nair',
-                reason: 'Missed high-risk medication dose.',
-                status: 'PENDING',
-                created_at: new Date(Date.now() - 3600000).toISOString(),
-                risk_score: 82
-            }
-        ];
     }
 }
