@@ -5,7 +5,7 @@ import { JanmasethuScopePolicy } from './JanmasethuScopePolicy';
 
 @Injectable()
 export class JanmasethuRbacService {
-    private readonly permissionMatrix: Record<JanmasethuUserRole, JanmasethuPermission[]> = {
+    private readonly permissionMatrix: Record<string, JanmasethuPermission[]> = {
         [JanmasethuUserRole.CRO]: [
             JanmasethuPermission.VIEW_THREAD,
             JanmasethuPermission.ASSIGN_THREAD,
@@ -24,18 +24,40 @@ export class JanmasethuRbacService {
             JanmasethuPermission.VIEW_THREAD,
             JanmasethuPermission.TAKE_CONTROL,
             JanmasethuPermission.REPLY,
+            JanmasethuPermission.VIEW_PII,
+        ],
+        FRONTDESK: [
+            JanmasethuPermission.VIEW_THREAD,
+            JanmasethuPermission.VIEW_PII,
+        ],
+        FRONT_DESK: [
+            JanmasethuPermission.VIEW_THREAD,
+            JanmasethuPermission.VIEW_PII,
+        ],
+        RECEPTIONIST: [
+            JanmasethuPermission.VIEW_THREAD,
+            JanmasethuPermission.VIEW_PII,
+        ],
+        ADMIN: [
+            JanmasethuPermission.VIEW_THREAD,
+            JanmasethuPermission.ASSIGN_THREAD,
+            JanmasethuPermission.TAKE_CONTROL,
+            JanmasethuPermission.REPLY,
+            JanmasethuPermission.OVERRIDE_SLA,
+            JanmasethuPermission.VIEW_PII,
         ],
     };
 
     constructor(private readonly scopePolicy: JanmasethuScopePolicy) {}
 
-    private getRole(role: string): JanmasethuUserRole {
-        if (!role) return '' as JanmasethuUserRole;
-        return role.toUpperCase() as JanmasethuUserRole;
+    private getRole(role: string): string {
+        if (!role) return '';
+        return role.toUpperCase();
     }
 
     hasPermission(role: JanmasethuUserRole | string, permission: JanmasethuPermission): boolean {
-        return this.permissionMatrix[this.getRole(role)]?.includes(permission) || false;
+        const roleKey = this.getRole(role);
+        return this.permissionMatrix[roleKey]?.includes(permission) || false;
     }
 
     canViewThread(user: JanmasethuUserContext, thread: Thread): boolean {
