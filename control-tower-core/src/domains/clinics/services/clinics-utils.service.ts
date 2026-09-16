@@ -118,6 +118,42 @@ export class ClinicsUtilsService {
         const normStart = this.normalizeTime(startTime);
         const normEnd = this.normalizeTime(endTime);
 
+        // 0. Check doctor leaves
+        const { data: leaves, error: leavesError } = await supabase
+            .from('sakhi_clinic_doctor_leaves')
+            .select('*')
+            .eq('doctor_id', doctorId)
+            .eq('leave_date', appointmentDate);
+        if (leavesError) throw leavesError;
+        if (leaves && leaves.length > 0) {
+            return { isAvailable: false, reason: 'Doctor is on leave on this date.' };
+        }
+
+        // 0.5 Check weekly schedule
+        const dateObj = new Date(appointmentDate);
+        const dayOfWeek = dateObj.getDay();
+        const { data: schedules, error: schedulesError } = await supabase
+            .from('sakhi_clinic_doctor_schedules')
+            .select('*')
+            .eq('doctor_id', doctorId)
+            .eq('day_of_week', dayOfWeek)
+            .eq('is_active', true);
+        if (schedulesError) throw schedulesError;
+        
+        if (!schedules || schedules.length === 0) {
+            return { isAvailable: false, reason: 'Doctor does not work on this day.' };
+        }
+
+        const isWithinSchedule = schedules.some(schedule => {
+            const schedStart = this.normalizeTime(schedule.start_time);
+            const schedEnd = this.normalizeTime(schedule.end_time);
+            return normStart >= schedStart && normEnd <= schedEnd;
+        });
+
+        if (!isWithinSchedule) {
+             return { isAvailable: false, reason: "Requested time is outside the doctor's working hours." };
+        }
+
         // 1. Check if doctor availability slots exist for this date
         const { data: slots, error: slotsError } = await supabase
             .from('sakhi_clinic_availability_slots')
