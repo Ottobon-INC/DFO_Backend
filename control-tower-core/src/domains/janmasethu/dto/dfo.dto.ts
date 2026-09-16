@@ -99,6 +99,10 @@ export class AddPrescriptionDto {
     @IsUUID()
     patient_id: string;
 
+    @IsString()
+    @IsOptional()
+    clinical_notes?: string;
+
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => MedicationItemDto)

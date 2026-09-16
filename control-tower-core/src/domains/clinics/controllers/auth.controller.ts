@@ -13,7 +13,7 @@ import * as bcrypt from 'bcrypt';
 export class AuthController {
     private readonly logger = new Logger(AuthController.name);
     private readonly jwtSecret: string;
-    private readonly jwtExpiresIn = '7d';
+    private readonly jwtExpiresIn = '24h';
 
     constructor(
         private readonly supabaseService: ClinicsSupabaseService,

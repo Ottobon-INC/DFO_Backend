@@ -55,16 +55,32 @@ export class DocumentRepository {
             }
         }
 
-        if (!matchingId) return null;
+        if (matchingId) {
+            const { data, error } = await this.supabase
+                .from(this.TABLE)
+                .select('*')
+                .eq('id', matchingId)
+                .maybeSingle();
 
+            if (!error && data) {
+                return this.mergeMetadata(data);
+            }
+        }
+
+        // Resilient fallback: query Supabase directly by matching filename with prescriptionId
+        const shortId = prescriptionId.substring(0, 8);
+        const safePrescriptionId = prescriptionId.replace(/[,\.()"]/g, '');
+        const safeShortId = shortId.replace(/[,\.()"]/g, '');
         const { data, error } = await this.supabase
             .from(this.TABLE)
             .select('*')
-            .eq('id', matchingId)
+            .or(`name.ilike.%${safePrescriptionId}%,name.ilike.%${safeShortId}%`)
+            .order('created_at', { ascending: false })
+            .limit(1)
             .maybeSingle();
 
-        if (error) {
-            this.logger.warn(`findByPrescriptionId failed to retrieve doc: ${error.message}`);
+        if (error || !data) {
+            this.logger.warn(`findByPrescriptionId failed to retrieve doc for ${prescriptionId}`);
             return null;
         }
 
@@ -88,10 +104,11 @@ export class DocumentRepository {
         const payload = {
             id,
             patient_id: dto.patient_id,
-            clinic_id: TenantContext.getClinicId(), // Pass the tenant context
+            clinic_id: TenantContext.getClinicId() || '', // Pass the tenant context
             name: dto.file_name,
             file_path: dto.file_path,
             mime_type: 'application/pdf',
+            status: 'pending', // Explicitly mark as pending
             created_at: new Date()
         };
 

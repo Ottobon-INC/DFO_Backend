@@ -1,6 +1,8 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { ClinicsAuthGuard } from '../domains/clinics/guards/clinics-auth.guard';
 
 @Controller('debug')
+@UseGuards(ClinicsAuthGuard)
 export class DebugController {
     @Get('ping')
     ping() {

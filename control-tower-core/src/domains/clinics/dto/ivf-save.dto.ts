@@ -2,6 +2,9 @@ import { IsOptional, IsString, IsArray, IsBoolean, ValidateNested } from 'class-
 import { Type } from 'class-transformer';
 
 export class IvfFemaleProfileDto {
+    @IsOptional() @IsString() name?: string;
+    @IsOptional() @IsString() date?: string;
+    @IsOptional() @IsString() age?: string;
     @IsOptional() @IsString() education?: string;
     @IsOptional() @IsString() occupation?: string;
     @IsOptional() @IsString() marital_life_years?: string;

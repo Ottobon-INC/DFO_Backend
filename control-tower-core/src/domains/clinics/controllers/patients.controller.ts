@@ -44,8 +44,10 @@ export class PatientsController {
                 query = query.eq('clinic_id', clinic_id);
             }
             if (phone) query = query.eq('mobile', phone);
-            else if (q) query = query.or(`name.ilike.%${q}%,mobile.ilike.%${q}%`);
-            else query = query.order('created_at', { ascending: false });
+            else if (q) {
+                const safeQ = q.replace(/[,\.()"]/g, '');
+                query = query.or(`name.ilike.%${safeQ}%,mobile.ilike.%${safeQ}%`);
+            } else query = query.order('created_at', { ascending: false });
             query = query.range(from, to);
             const { data, error, count } = await query;
             if (error) throw error;

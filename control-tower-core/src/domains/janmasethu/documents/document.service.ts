@@ -38,6 +38,7 @@ export class DocumentService {
         clinic_id: string;
         doctor_id: string;
         generated_by: string;
+        clinical_notes?: string;
     }): Promise<{ queued: boolean; document_id?: string; message: string }> {
         // --- IDEMPOTENCY CHECK ---
         const existing = await this.documentRepo.findByPrescriptionId(dto.prescription_id);
@@ -50,8 +51,12 @@ export class DocumentService {
             };
         }
 
+        const patientInfo = await this.fetchPatient(dto.patient_id);
+        const rawName = (patientInfo.name || patientInfo.full_name || (patientInfo.first_name ? `${patientInfo.first_name} ${patientInfo.last_name || ''}`.trim() : '') || 'patient').trim();
+        const safePatientName = rawName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+
         const idempotencyKey = `prescription_${dto.prescription_id}_v1`;
-        const fileName = `prescription_${dto.prescription_id}.pdf`;
+        const fileName = `prescription_${safePatientName}_${dto.prescription_id}.pdf`;
         const filePath = `clinics/${dto.clinic_id}/prescriptions/${Date.now()}-${fileName}`;
 
         // Create PENDING record atomically before queuing
@@ -105,7 +110,26 @@ export class DocumentService {
                 this.fetchClinic(clinic_id),
             ]);
 
-            const patientName = patient.full_name;
+            // Properly resolve patient name from 'name', 'full_name', or 'first_name + last_name'
+            const formatTitleCase = (str: string) => {
+                if (!str) return '';
+                return str.split(' ').filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+            };
+
+            const rawPatientName = (patient.name || patient.full_name || (patient.first_name ? `${patient.first_name} ${patient.last_name || ''}`.trim() : '') || 'Patient').trim();
+            const patientName = formatTitleCase(rawPatientName);
+
+            // Properly resolve doctor name from 'first_name + last_name', 'name', or 'full_name'
+            const doctorName = (
+                (doctor.first_name ? `Dr. ${doctor.first_name} ${doctor.last_name || ''}`.trim() : '') ||
+                doctor.name ||
+                doctor.full_name ||
+                'Attending Physician'
+            ).trim();
+
+            const formattedClinicalNotes = payload.clinical_notes 
+                ? payload.clinical_notes.replace(/\n/g, '<br/>') 
+                : 'See below for medication details.';
 
             const templateData = {
                 clinic_name: clinic.name || 'JANMASETHU',
@@ -114,11 +138,11 @@ export class DocumentService {
                 appointment_time: new Date().toLocaleTimeString(),
                 age: patient.age || 'N/A',
                 gender: patient.gender || 'N/A',
-                patient_id: patient.id.substring(0, 8).toUpperCase(),
-                clinical_notes: 'See below for medication details.',
+                patient_id: patient.uhid || (patient.id ? patient.id.substring(0, 8).toUpperCase() : 'N/A'),
+                clinical_notes: formattedClinicalNotes,
                 additional_notes: 'Generated via Patient Portal',
-                doctor_name: doctor.full_name,
-                doctor_qualifications: doctor.qualifications || (doctor.specialization && doctor.specialization.length > 0 ? doctor.specialization.join(', ') : 'MBBS'),
+                doctor_name: doctorName,
+                doctor_qualifications: doctor.qualifications || (doctor.specialization && doctor.specialization.length > 0 ? (Array.isArray(doctor.specialization) ? doctor.specialization.join(', ') : doctor.specialization) : 'MBBS'),
                 reg_no: doctor.registration_number || 'REG-99210-A',
                 doctor_signature_url: doctor.signature_url || 'https://via.placeholder.com/150x50?text=Digital+Signature',
                 medications: prescriptions.map((prescription: any) => {
@@ -168,14 +192,25 @@ export class DocumentService {
         if (!documents) return [];
 
         return Promise.all(documents.map(async (doc) => {
-            const signedUrl = await this.s3Service.generatePresignedDownloadUrl(doc.file_path);
+            const isPublished = doc.status === 'published';
+            let signedUrl: string | null = null;
 
-            this.documentRepo.logAccess({
-                document_id: doc.id,
-                accessed_by: actorId,
-                role: actorRole,
-                expires_at: new Date(Date.now() + 3600 * 1000),
-            }).catch(e => this.logger.warn(`Access log failed: ${e.message}`));
+            if (isPublished && doc.file_path) {
+                try {
+                    signedUrl = await this.s3Service.generatePresignedDownloadUrl(doc.file_path, 3600, doc.name);
+                } catch (e: any) {
+                    this.logger.warn(`Presigned URL generation failed for ${doc.id}: ${e.message}`);
+                }
+            }
+
+            if (signedUrl) {
+                this.documentRepo.logAccess({
+                    document_id: doc.id,
+                    accessed_by: actorId,
+                    role: actorRole,
+                    expires_at: new Date(Date.now() + 3600 * 1000),
+                }).catch(e => this.logger.warn(`Access log failed: ${e.message}`));
+            }
 
             return {
                 id: doc.id,
@@ -183,9 +218,9 @@ export class DocumentService {
                 file_name: doc.name,
                 version: doc.version || 1,
                 created_at: doc.created_at,
-                generation_status: 'generated',
+                generation_status: doc.status || (isPublished ? 'generated' : 'pending'),
                 signed_url: signedUrl,
-                expires_at: new Date(Date.now() + 3600 * 1000),
+                expires_at: signedUrl ? new Date(Date.now() + 3600 * 1000) : null,
             };
         }));
     }

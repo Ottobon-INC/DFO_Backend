@@ -317,7 +317,29 @@ export class DocumentsController {
                 throw new HttpException({ success: false, error: 'Document unavailable or access denied' }, HttpStatus.NOT_FOUND);
             }
 
-            // 2. Generate short-lived presigned URL (15 minutes = 900 seconds) forcing it to download with its original name
+            // 2. Check if document is still generating
+            if (document.status === 'pending') {
+                return {
+                    success: false,
+                    pending: true,
+                    message: 'Document is still being generated. Please wait a moment.'
+                };
+            }
+
+            // 3. Verify file exists in S3 storage before generating presigned URL
+            if (!document.file_path.startsWith('http://') && !document.file_path.startsWith('https://')) {
+                const exists = await this.s3Service.fileExists(document.file_path);
+                if (!exists) {
+                    this.logger.warn(`Document ${documentId} file not found in S3 storage yet: ${document.file_path}`);
+                    return {
+                        success: false,
+                        pending: true,
+                        message: 'Document file is being prepared in storage. Please wait a moment.'
+                    };
+                }
+            }
+
+            // 4. Generate short-lived presigned URL (15 minutes = 900 seconds) forcing it to download with its original name
             let secureUrl: string;
             if (document.file_path.startsWith('http://') || document.file_path.startsWith('https://')) {
                 secureUrl = document.file_path;

@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Param, Body, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Param, Body, Query, Logger, HttpException, HttpStatus, UseGuards } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DFO_EVENTS } from '../../../infrastructure/events/event-constants';
@@ -22,14 +22,16 @@ export class StaffController {
     ) { }
 
     @Get()
-    async listStaff() {
+    async listStaff(@Query('refresh') refresh?: string) {
         const clinic_id = TenantContext.getClinicId();
         if (!clinic_id) throw new HttpException({ success: false, error: 'Tenant context missing' }, HttpStatus.BAD_REQUEST);
 
-        // Check cache first
-        const cachedStaff = await this.staffCache.getStaffList(clinic_id);
-        if (cachedStaff) {
-            return { success: true, data: cachedStaff, cached: true };
+        // Check cache first (unless refresh is explicitly requested)
+        if (refresh !== 'true') {
+            const cachedStaff = await this.staffCache.getStaffList(clinic_id);
+            if (cachedStaff) {
+                return { success: true, data: cachedStaff, cached: true };
+            }
         }
 
         const supabase = this.supabaseService.getClient();
@@ -57,16 +59,42 @@ export class StaffController {
             if (error) throw error;
 
             // Flatten the response slightly for convenience
-            const staffList = data.map((item: any) => ({
+            const staffList: any[] = (data || []).map((item: any) => ({
                 id: item.user_id, // Map doctor/user ID explicitly to 'id' for frontend
                 assignment_id: item.id,
                 user_id: item.user_id,
                 role: item.role,
                 is_active: item.is_active,
+                specialization: (item.sakhi_clinic_users as any)?.specialization || null,
                 name: [item.sakhi_clinic_users?.first_name, item.sakhi_clinic_users?.last_name].filter(Boolean).join(' ') || item.sakhi_clinic_users?.email,
                 email: item.sakhi_clinic_users?.email,
                 joined_at: item.sakhi_clinic_users?.created_at
             }));
+
+            // Also include clinic users (doctors, admins) directly from sakhi_clinic_users
+            const { data: clinicUsers } = await supabase
+                .from('sakhi_clinic_users')
+                .select('id, first_name, last_name, email, role, is_active, created_at, specialization')
+                .eq('clinic_id', clinic_id);
+
+            const existingUserIds = new Set(staffList.map((item: any) => item.user_id));
+            if (clinicUsers && Array.isArray(clinicUsers)) {
+                for (const u of clinicUsers) {
+                    if (!existingUserIds.has(u.id)) {
+                        staffList.push({
+                            id: u.id,
+                            assignment_id: u.id,
+                            user_id: u.id,
+                            role: u.role || 'Doctor',
+                            is_active: u.is_active !== false,
+                            specialization: u.specialization || null,
+                            name: [u.first_name, u.last_name].filter(Boolean).join(' ') || u.email,
+                            email: u.email,
+                            joined_at: u.created_at
+                        });
+                    }
+                }
+            }
 
             // Save to cache
             await this.staffCache.setStaffList(clinic_id, staffList);

@@ -9,7 +9,7 @@ import * as bcrypt from 'bcrypt';
 export class SuperAdminAuthController {
     private readonly logger = new Logger(SuperAdminAuthController.name);
     private readonly jwtSecret: string;
-    private readonly jwtExpiresIn = '7d';
+    private readonly jwtExpiresIn = '24h';
     private readonly superAdminSecret: string;
 
     constructor(

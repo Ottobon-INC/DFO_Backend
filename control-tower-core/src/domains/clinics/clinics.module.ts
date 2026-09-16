@@ -14,6 +14,7 @@ import { QmsNotificationService } from './services/qms-notification.service';
 import { QmsNotificationProcessor } from './services/qms-notification.processor';
 import { AnalyticsService } from './services/analytics.service';
 import { ClinicsIvfService } from './services/clinics-ivf.service';
+import { FollowUpsService } from './services/follow-ups.service';
 import { SlotEngineService } from './services/slot-engine.service';
 import { QmsGateway } from './gateways/qms.gateway';
 
@@ -48,6 +49,7 @@ import { QMSQueueController } from './controllers/qms-queue.controller';
 import { AnalyticsController } from './controllers/analytics.controller';
 import { ClinicsController } from './controllers/clinics.controller';
 import { SpecialtyRecordsController } from './controllers/specialty-records.controller';
+import { FollowUpsController } from './controllers/follow-ups.controller';
 
 // Feature Modules
 import { AwsModule } from '../../infrastructure/aws/aws.module';
@@ -76,6 +78,8 @@ import { BullModule } from '@nestjs/bullmq';
         CacheEventProcessor,
         RoomAllocationService,
         SchedulesService,
+        ClinicsIvfService,
+        FollowUpsService,
     ],
     controllers: [
         AppointmentsController,
@@ -100,6 +104,8 @@ import { BullModule } from '@nestjs/bullmq';
         QMSQueueController,
         AnalyticsController,
         ClinicsController,
+        SpecialtyRecordsController,
+        FollowUpsController,
     ],
     exports: [
         ClinicsSupabaseService,
@@ -109,6 +115,8 @@ import { BullModule } from '@nestjs/bullmq';
         StaffCacheService,
         RoomAllocationService,
         SchedulesService,
+        ClinicsIvfService,
+        FollowUpsService,
     ],
 })
 export class ClinicsModule {}

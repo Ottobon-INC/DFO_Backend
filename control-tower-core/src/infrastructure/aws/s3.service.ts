@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { basename } from 'path';
 
@@ -142,6 +142,29 @@ export class S3Service {
             this.logger.error(`Failed to delete file from S3 at path ${path}:`, error);
             // We log but don't strictly throw to avoid breaking the DB transaction
             // in case the file was already deleted or bucket policies blocked it.
+        }
+    }
+
+    /**
+     * Checks if a file exists in the S3 bucket using HeadObjectCommand.
+     * 
+     * @param path The full S3 object key (path).
+     * @returns True if object exists, false otherwise.
+     */
+    async fileExists(path: string): Promise<boolean> {
+        if (!path) return false;
+        try {
+            await this.s3Client.send(new HeadObjectCommand({
+                Bucket: this.bucketName,
+                Key: path,
+            }));
+            return true;
+        } catch (error: any) {
+            if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+                return false;
+            }
+            this.logger.warn(`S3 fileExists check for ${path}: ${error?.message || error}`);
+            return false;
         }
     }
 }

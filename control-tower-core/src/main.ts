@@ -1,4 +1,24 @@
 import 'reflect-metadata';
+import dns from 'dns';
+
+// Resilient DNS resolution to prevent local ISP DNS hijacking of Supabase Cloudflare Anycast endpoints
+if (process.env.NODE_ENV !== 'production') {
+  const originalDnsLookup = dns.lookup;
+  (dns as any).lookup = (hostname: string, options: any, callback: any) => {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    if (hostname && typeof hostname === 'string' && hostname.includes('supabase.co')) {
+      if (options && options.all) {
+        return callback(null, [{ address: '104.18.38.10', family: 4 }]);
+      }
+      return callback(null, '104.18.38.10', 4);
+    }
+    return originalDnsLookup.call(dns, hostname, options, callback);
+  };
+}
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
@@ -24,7 +44,14 @@ async function bootstrap() {
 
   // Security Hardening
   app.use(helmet());
-  app.enableCors();
+  if (process.env.NODE_ENV === 'production') {
+    app.enableCors({
+      origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : false,
+      credentials: true,
+    });
+  } else {
+    app.enableCors();
+  }
 
   // Global Guards & Filters
   app.useGlobalFilters(new HealthcareExceptionFilter());
@@ -40,14 +67,16 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('PORT') || 3000;
 
-  const config = new DocumentBuilder()
-    .setTitle('DFO Control Tower API')
-    .setDescription('API documentation for the Control Tower')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('DFO Control Tower API')
+      .setDescription('API documentation for the Control Tower')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api-docs', app, document);
+  }
 
   await app.listen(port, '0.0.0.0');
   console.log(`[Janmasethu DFO] Control Tower Core is running on: http://localhost:${port}`);

@@ -174,7 +174,8 @@ export class JanmasethuController {
             patient_id: patient_id,
             clinic_id: clinic_id || '',
             doctor_id: ctx.id,
-            generated_by: ctx.id
+            generated_by: ctx.id,
+            clinical_notes: dto.clinical_notes
         }).catch(e => this.logger.warn(`Document auto-queue failed (non-critical): ${e.message}`));
 
         return { success: true, count: resIds.length, document_generation: 'queued' };

@@ -45,7 +45,8 @@ export class PatientAuthController {
                 .select('id, clinic_id, name, mobile, uhid, pin_hash, failed_attempts, locked_until');
 
             if (last10.length >= 7) {
-                patientQuery = patientQuery.or(`mobile.eq.${cleanMobile},mobile.eq.+91${last10},mobile.eq.91${last10},mobile.ilike.%${last10}`);
+                const safeCleanMobile = cleanMobile.replace(/[,\.()"]/g, '');
+                patientQuery = patientQuery.or(`mobile.eq.${safeCleanMobile},mobile.eq.+91${last10},mobile.eq.91${last10},mobile.ilike.%${last10}`);
             } else {
                 patientQuery = patientQuery.eq('mobile', cleanMobile);
             }

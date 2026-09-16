@@ -49,7 +49,10 @@ export class LeadsController {
 
             if (phone) query = query.eq('phone', phone);
             else if (status) query = query.eq('status', status);
-            else if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%`);
+            else if (q) {
+                const safeQ = q.replace(/[,\.()"]/g, '');
+                query = query.or(`name.ilike.%${safeQ}%,phone.ilike.%${safeQ}%`);
+            }
             
             const { data, error, count } = await query;
             if (error) throw error;
@@ -145,7 +148,10 @@ export class LeadsController {
 
             if (phone) query = query.eq('phone', phone);
             else if (status) query = query.eq('status', status);
-            else if (q) query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%`);
+            else if (q) {
+                const safeQ = q.replace(/[,\.()"]/g, '');
+                query = query.or(`name.ilike.%${safeQ}%,phone.ilike.%${safeQ}%`);
+            }
             const { data, error } = await query;
             if (error) throw error;
             const leads = data?.map(lead => ({ ...lead, problem: this.encryption.decrypt(lead.problem), treatment_suggested: this.encryption.decrypt(lead.treatment_suggested), treatment_doctor: this.encryption.decrypt(lead.treatment_doctor) })) || [];

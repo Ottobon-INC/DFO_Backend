@@ -51,6 +51,7 @@ export interface GenerateDocumentJobPayload {
     doctor_id: string;
     type: DocumentType;
     generated_by: string;
+    clinical_notes?: string;
     idempotency_key: string;      // Prevents duplicate doc generation for same prescription
 }
 

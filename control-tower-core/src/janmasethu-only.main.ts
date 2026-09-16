@@ -7,7 +7,14 @@ async function bootstrap() {
     const logger = new Logger('JanmasethuBootstrap');
     const app = await NestFactory.create(JanmasethuOnlyModule);
 
-    app.enableCors();
+    if (process.env.NODE_ENV === 'production') {
+        app.enableCors({
+            origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : false,
+            credentials: true,
+        });
+    } else {
+        app.enableCors();
+    }
     app.useGlobalPipes(new ValidationPipe({
         whitelist: true,
         transform: true,

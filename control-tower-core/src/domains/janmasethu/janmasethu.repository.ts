@@ -810,7 +810,8 @@ export class JanmasethuRepository {
             .range(from, to);
 
         if (params.query) {
-            query = query.or(`name.ilike.%${params.query}%,phone.ilike.%${params.query}%`);
+            const safeQuery = params.query.replace(/[,\.()"]/g, '');
+            query = query.or(`name.ilike.%${safeQuery}%,phone.ilike.%${safeQuery}%`);
         }
 
         const { data, error, count } = await query;
