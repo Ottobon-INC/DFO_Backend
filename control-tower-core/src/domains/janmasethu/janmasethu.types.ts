@@ -39,6 +39,7 @@ export enum JanmasethuUserRole {
     CRO = 'CRO',
     DOCTOR = 'DOCTOR',
     NURSE = 'NURSE',
+    FRONTDESK = 'FRONTDESK',
 }
 
 export enum JanmasethuPermission {
