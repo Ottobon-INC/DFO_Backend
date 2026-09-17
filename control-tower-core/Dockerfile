@@ -11,6 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Disable heavy postinstall binary downloads in container builds
+ENV REDISMS_DISABLE_POSTINSTALL=1
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+
 # Copy package manifests first for optimal Docker layer caching
 COPY package*.json ./
 

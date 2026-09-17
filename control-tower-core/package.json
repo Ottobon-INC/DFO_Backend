@@ -5,6 +5,9 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "redisMemoryServer": {
+    "disablePostinstall": true
+  },
   "scripts": {
     "dev": "npm run start:dev",
     "build": "nest build",
