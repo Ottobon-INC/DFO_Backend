@@ -25,6 +25,9 @@ export class JanmasethuRbacService {
             JanmasethuPermission.TAKE_CONTROL,
             JanmasethuPermission.REPLY,
         ],
+        [JanmasethuUserRole.FRONTDESK]: [
+            JanmasethuPermission.VIEW_PII,
+        ],
     };
 
     constructor(private readonly scopePolicy: JanmasethuScopePolicy) {}
