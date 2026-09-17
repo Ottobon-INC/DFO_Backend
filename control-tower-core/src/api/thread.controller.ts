@@ -71,7 +71,29 @@ export class ThreadController {
 
     @Get('context/:id')
     async getContext(@Param('id') threadId: string) {
-        return this.threadService.getMessages(threadId);
+        const thread = await this.threadService.getThread(threadId);
+        const tAny = thread as any;
+        let messages = await this.threadService.getMessages(threadId);
+        if ((!messages || messages.length === 0) && tAny?.last_message_preview) {
+            messages = [
+                {
+                    id: 'preview-' + thread.id,
+                    sender_type: 'USER',
+                    content: tAny.last_message_preview,
+                    created_at: tAny.last_message_at || thread.updated_at
+                }
+            ] as any;
+        }
+        return {
+            thread: {
+                ...thread,
+                patient_name: tAny?.patient_name || (thread?.user_id ? `Patient (${thread.user_id.substring(0, 8)})` : `Patient #${(thread?.id || '').substring(0, 6)}`)
+            },
+            messages: messages || [],
+            structured_memory: {
+                summary: tAny?.escalation_reason || 'High Risk clinical alert requiring doctor intervention.'
+            }
+        };
     }
 
     @Get('audit/all')

@@ -38,6 +38,24 @@ export class MessageRepository {
     }
 
     async findByThread(threadId: string): Promise<Message[]> {
+        // 1. Check conversation_messages for this thread
+        const { data: convMsgs, error: convErr } = await this.personalSupabase
+            .from('conversation_messages')
+            .select('*')
+            .eq('thread_id', threadId)
+            .order('created_at', { ascending: true });
+
+        if (convMsgs && convMsgs.length > 0) {
+            return convMsgs.map((m: any) => ({
+                id: m.id,
+                thread_id: m.thread_id,
+                sender_id: m.sender_id || 'PATIENT',
+                sender_type: (m.sender_type || 'USER').toUpperCase() as any,
+                content: m.content || '',
+                created_at: new Date(m.created_at)
+            }));
+        }
+
         const { data: thread } = await this.personalSupabase
             .from('conversation_threads')
             .select('user_id')

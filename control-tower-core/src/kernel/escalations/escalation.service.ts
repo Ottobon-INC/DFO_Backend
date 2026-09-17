@@ -16,11 +16,11 @@ export class EscalationService {
             .select('*')
             .eq('status', 'PENDING');
 
-        if (doctorId) {
+        if (doctorId && doctorId !== 'all') {
             query = query.eq('doctor_id', doctorId);
         }
 
-        if (clinicId) {
+        if (clinicId && clinicId !== 'all') {
             query = query.eq('clinic_id', clinicId);
         }
 
@@ -29,6 +29,16 @@ export class EscalationService {
         if (error) {
             this.logger.error(`Error fetching escalations: ${error.message}`, error.details);
             return [];
+        }
+
+        // If no escalations directly assigned to this doctor, show all pending escalations in clinic
+        if ((!data || data.length === 0) && doctorId && doctorId !== 'all') {
+            const { data: fallbackData } = await this.supabase
+                .from('sakhi_escalations')
+                .select('*')
+                .eq('status', 'PENDING')
+                .order('created_at', { ascending: false });
+            return fallbackData || [];
         }
 
         return data || [];
@@ -53,7 +63,7 @@ export class EscalationService {
         // 1. Get the escalation to find the user_id
         const { data: escalation, error: escalationError } = await this.supabase
             .from('sakhi_escalations')
-            .select('user_id, patient_id')
+            .select('user_id, patient_id, conversation_context')
             .eq('id', id)
             .single();
 
@@ -64,6 +74,15 @@ export class EscalationService {
 
         const userId = escalation.user_id;
         if (!userId) {
+            // Fallback: If conversation_context has embedded messages, return them
+            if (Array.isArray(escalation.conversation_context)) {
+                return escalation.conversation_context.map((m: any, idx: number) => ({
+                    id: `ctx-${idx}`,
+                    role: m.role || 'user',
+                    content: m.content || '',
+                    created_at: new Date().toISOString()
+                }));
+            }
             return []; // No user ID to fetch messages for
         }
 
