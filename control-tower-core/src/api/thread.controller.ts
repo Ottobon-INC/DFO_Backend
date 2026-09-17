@@ -69,9 +69,20 @@ export class ThreadController {
         return this.threadService.getThreadsByStatus('green');
     }
 
+    @Get('queue/frontdesk')
+    async getFrontDeskQueue() {
+        return this.threadService.getFrontDeskQueue();
+    }
+
     @Get('context/:id')
     async getContext(@Param('id') threadId: string) {
-        return this.threadService.getMessages(threadId);
+        const thread = await this.threadService.getThread(threadId);
+        const messages = await this.threadService.getMessages(threadId);
+        return {
+            thread,
+            messages,
+            structured_memory: (thread as any)?.metadata?.structured_memory || null,
+        };
     }
 
     @Get('audit/all')

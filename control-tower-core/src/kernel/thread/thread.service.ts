@@ -129,4 +129,9 @@ export class ThreadService {
     async getMessages(threadId: string): Promise<Message[]> {
         return this.messageRepository.findByThread(threadId);
     }
+
+    async getFrontDeskQueue(): Promise<Thread[]> {
+        return this.threadRepository.findFrontDeskQueue();
+    }
 }
+
