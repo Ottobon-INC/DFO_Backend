@@ -1,29 +1,66 @@
-node_modules/
-dist/
-build/
-.next/
-.env*
-temp_main/
+# Exclude README
+# README.md
+
+# compiled output
+/dist
+/node_modules
+/build
+
+# Logs
+logs
 *.log
-coverage/
-dfo_backend/
-dfo_frontend/
-frontend/
-JS_Clinics_Backend/
-control-tower-core/reset_passwords.js
-control-tower-core/scratch_seed_user.js
-control-tower-core/scratch_test_supabase.js
-control-tower-core/extract_sql.js
-control-tower-core/all_extracted_sql.sql
-control-tower-core/check_333.js
-control-tower-core/check_417.js
-control-tower-core/find_clinical.js
-control-tower-core/find_table_mentions.js
-control-tower-core/inspect_columns.js
-control-tower-core/inspect_urgency.js
-control-tower-core/print_other_steps.js
-control-tower-core/print_step.js
-control-tower-core/search_row.js
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS
+.DS_Store
+
+# Tests — coverage outputs
+/coverage
+/.nyc_output
+
+# ============================================================
+# Test files — kept locally only, never pushed to repo
+# ============================================================
+
+# Root-level scratch/manual test scripts
+test-*.js
+test-*.ts
+
+# Unit test spec files (stays local for development only)
+**/*.spec.ts
+**/*.spec.js
+**/*.e2e-spec.ts
+
+# Integration test directory
+/test/
+
+# Test configuration files
+docker-compose.test.yml
+
+# Test reports and documentation
+alignment_and_testing_report.md
+alignment_report.md
+
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 
 # dotenv environment variable files
 .env
@@ -31,3 +68,16 @@ control-tower-core/search_row.js
 .env.*.local
 .env.local
 .env.*
+
+# temp directory
+.temp
+.tmp
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Diagnostic reports (https://nodejs.org/api/report.html)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
