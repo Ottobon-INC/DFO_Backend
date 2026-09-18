@@ -15,30 +15,30 @@ WORKDIR /app
 ENV REDISMS_DISABLE_POSTINSTALL=1
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
-# Copy package manifests first for optimal Docker layer caching
+# ==========================================
+# Stage 2: Production Dependencies (clean)
+# Installs ONLY production deps from scratch.
+# Avoids npm prune misidentifying packages
+# marked "dev" in lock file.
+# ==========================================
+FROM base AS prod-deps
+
 COPY package*.json ./
+RUN npm install --omit=dev --legacy-peer-deps
 
 # ==========================================
-# Stage 2: Dependencies (Build & Prod)
+# Stage 3: Build (all deps + TypeScript)
 # ==========================================
-FROM base AS dependencies
+FROM base AS build
 
-# Install all dependencies including devDependencies for build
+COPY package*.json ./
 RUN npm install --legacy-peer-deps
-
-# ==========================================
-# Stage 3: Build
-# ==========================================
-FROM dependencies AS build
 
 # Copy all source code
 COPY . .
 
 # Compile TypeScript to JavaScript in /app/dist
 RUN npm run build
-
-# Prune devDependencies to keep image size small
-RUN npm prune --production --legacy-peer-deps
 
 # ==========================================
 # Stage 4: Production Runner
@@ -55,8 +55,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy production node_modules from dependencies stage
-COPY --from=build /app/node_modules ./node_modules
+# Copy clean production node_modules (no prune needed — installed clean)
+COPY --from=prod-deps /app/node_modules ./node_modules
 # Copy compiled output from build stage
 COPY --from=build /app/dist ./dist
 # Copy package.json for runtime metadata
