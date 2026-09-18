@@ -24,6 +24,7 @@ export class JanmasethuRbacService {
             JanmasethuPermission.VIEW_THREAD,
             JanmasethuPermission.TAKE_CONTROL,
             JanmasethuPermission.REPLY,
+            JanmasethuPermission.VIEW_PII,
         ],
         [JanmasethuUserRole.FRONTDESK]: [
             JanmasethuPermission.VIEW_PII,
