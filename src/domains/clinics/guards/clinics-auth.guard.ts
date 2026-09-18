@@ -54,12 +54,14 @@ export class ClinicsAuthGuard implements CanActivate {
             }
 
             // Attach user info to request for downstream use
+            // IMPORTANT: spread ...decoded FIRST so explicit assignments below override it.
+            // decoded.role = 'authenticated' (Supabase claim) — we must NOT let it overwrite user_role.
             request.user = {
+                ...decoded,
                 id: decoded.sub,
                 email: decoded.email,
                 role: decoded.user_role || decoded.role,
                 name: decoded.name,
-                ...decoded,
             };
             return true;
         } catch (err: any) {

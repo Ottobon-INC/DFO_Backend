@@ -46,7 +46,8 @@ export class PermissionsGuard implements CanActivate {
             return true;
         }
 
-        const rawRole = user.role || user.user_role;
+        // Prefer user_role (the actual staff role) over role (which may be 'authenticated' from Supabase JWT)
+        const rawRole = user.user_role || user.role;
         const userTier = getRoleTier(rawRole);
 
         // Tier 1 (Doctor / Admin): Absolute God-mode over all clinical & operational permissions
