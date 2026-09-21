@@ -61,7 +61,8 @@ export class ClinicsIvfService {
             baselineUsgReq,
             maleProfileReq,
             semenAnalysisReq,
-            treatmentTrackingReq
+            treatmentTrackingReq,
+            stimulationSheetReq
         ] = await Promise.all([
             // @ts-ignore
             client.from('sakhi_ivf_female_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
@@ -78,7 +79,9 @@ export class ClinicsIvfService {
             // @ts-ignore
             client.from('sakhi_ivf_semen_analysis').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_treatment_tracking').select('*').eq('cycle_id', cycleId).maybeSingle()
+            client.from('sakhi_ivf_treatment_tracking').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            // @ts-ignore
+            client.from('sakhi_ivf_stimulation_sheet').select('*').eq('cycle_id', cycleId).maybeSingle()
         ]);
 
         const femaleProfile = femaleProfileReq.data ? { ...femaleProfileReq.data } : {};
@@ -102,6 +105,7 @@ export class ClinicsIvfService {
             maleProfile: Object.keys(maleProfile).length > 0 ? maleProfile : null,
             semenAnalysis: semenAnalysisReq.data || null,
             treatmentTracking: treatmentTrackingReq.data || null,
+            stimulationSheet: stimulationSheetReq.data || null,
         };
     }
 
@@ -262,6 +266,17 @@ export class ClinicsIvfService {
                     success_rate_explained: Boolean(payload.treatmentTracking.success_rate_explained),
                     protocol_steps: payload.treatmentTracking.protocol_steps || [],
                     follicular_rows: payload.treatmentTracking.follicular_rows || [],
+                })
+            );
+        }
+
+        if (payload.stimulationSheet) {
+            operations.push(
+                this.upsertSection(client, 'sakhi_ivf_stimulation_sheet', cycleId, clinicId, userId, {
+                    ...payload.stimulationSheet,
+                    hcg_date: this.sanitizeDate(payload.stimulationSheet.hcg_date),
+                    or_date: this.sanitizeDate(payload.stimulationSheet.or_date),
+                    daily_log: payload.stimulationSheet.daily_log || [],
                 })
             );
         }

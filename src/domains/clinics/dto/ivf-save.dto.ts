@@ -159,6 +159,32 @@ export class IvfTreatmentTrackingDto {
     @IsOptional() @IsArray() follicular_rows?: any[];
 }
 
+
+export class IvfStimulationSheetDto {
+    @IsOptional() @IsString() protocol?: string;
+    @IsOptional() @IsString() agonist_antagonist?: string;
+    @IsOptional() @IsString() positive_negative?: string;
+    @IsOptional() @IsString() antithyroid_abs?: string;
+    @IsOptional() @IsString() e2_level_note?: string;
+    @IsOptional() @IsString() lh_level_note?: string;
+    @IsOptional() @IsString() e2_day0?: string;
+    @IsOptional() @IsString() e2_day4?: string;
+    @IsOptional() @IsString() e2_day10?: string;
+    @IsOptional() @IsString() lh_day0?: string;
+    @IsOptional() @IsString() lh_day4?: string;
+    @IsOptional() @IsString() lh_day10?: string;
+    @IsOptional() @IsString() p4_value?: string;
+    @IsOptional() @IsArray() daily_log?: any[];
+    @IsOptional() @IsString() total_dose_fsh_lh_hmg?: string;
+    @IsOptional() @IsString() total_count?: string;
+    @IsOptional() @IsString() brand_name?: string;
+    @IsOptional() @IsString() given_by?: string;
+    @IsOptional() @IsString() hcg_date?: string;
+    @IsOptional() @IsString() hcg_time?: string;
+    @IsOptional() @IsString() or_date?: string;
+    @IsOptional() @IsString() or_time?: string;
+}
+
 export class SaveIvfCaseSheetDto {
     @IsOptional()
     @ValidateNested()
@@ -199,4 +225,10 @@ export class SaveIvfCaseSheetDto {
     @ValidateNested()
     @Type(() => IvfTreatmentTrackingDto)
     treatmentTracking?: IvfTreatmentTrackingDto;
+
+    @IsOptional()
+    @ValidateNested()
+    @Type(() => IvfStimulationSheetDto)
+    stimulationSheet?: IvfStimulationSheetDto;
 }
+
