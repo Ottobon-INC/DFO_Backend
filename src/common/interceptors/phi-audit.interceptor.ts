@@ -92,7 +92,7 @@ export class PhiAuditInterceptor implements NestInterceptor {
 
     try {
       const { error } = await supabase
-        .from('sakhi_clinic_phi_access_logs')
+        .from('opdesk_sakhi_clinic_phi_access_logs')
         .insert([logEntry])
         .abortSignal(controller.signal);
 

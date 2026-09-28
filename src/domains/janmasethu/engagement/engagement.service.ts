@@ -130,7 +130,7 @@ export class EngagementService {
     public async checkPatientConsent(patientId: string): Promise<boolean> {
         // Query sakhi_clinic_patients instead of dfo_patients
         const { data: patient } = await this.orgSupabase
-            .from('sakhi_clinic_patients')
+            .from('opdesk_sakhi_clinic_patients')
             .select('status')
             .eq('id', patientId)
             .maybeSingle();

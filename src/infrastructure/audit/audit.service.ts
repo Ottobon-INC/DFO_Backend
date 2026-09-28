@@ -20,7 +20,7 @@ export class AuditService {
         };
 
         const { error } = await this.supabase
-            .from('sakhi_audit_logs')
+            .from('opdesk_sakhi_audit_logs')
             .insert([dbLog]);
 
         if (error) {

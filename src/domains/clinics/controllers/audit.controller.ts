@@ -34,7 +34,7 @@ export class AuditController {
 
             // 1. Get all user IDs for this clinic safely using actual column names (first_name, last_name, email, role)
             const { data: allUsers, error: usersError } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .select('id, first_name, last_name, email, role')
                 .eq('clinic_id', clinic_id);
 
@@ -55,7 +55,7 @@ export class AuditController {
 
             // 2. Build logs query
             let logsQuery = supabase
-                .from('sakhi_audit_logs')
+                .from('opdesk_sakhi_audit_logs')
                 .select('*', { count: 'exact' })
                 .order('created_at', { ascending: false })
                 .range(offset, offset + limit - 1);
@@ -100,7 +100,7 @@ export class AuditController {
             } else {
                 // Fallback attempt to general audit_logs table
                 const { data: fallbackLogs, count: fCount } = await supabase
-                    .from('audit_logs')
+                    .from('opdesk_audit_logs')
                     .select('*', { count: 'exact' })
                     .order('created_at', { ascending: false })
                     .range(offset, offset + limit - 1);

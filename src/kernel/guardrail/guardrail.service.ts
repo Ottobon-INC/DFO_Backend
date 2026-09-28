@@ -25,7 +25,7 @@ export class GuardrailService {
         if (triggeredRule) {
             // Persist triggered guardrail metadata
             await this.supabase
-                .from('guardrail_evaluations')
+                .from('opdesk_guardrail_evaluations')
                 .insert([{
                     thread_id: threadId,
                     content_snippet: content.substring(0, 100),

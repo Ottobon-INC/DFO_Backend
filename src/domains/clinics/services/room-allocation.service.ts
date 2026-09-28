@@ -15,7 +15,7 @@ export class RoomAllocationService {
     async getCategories(clinic_id: string) {
         const supabase = this.supabaseService.getClient();
         const { data, error } = await supabase
-            .from('sakhi_clinic_room_categories')
+            .from('opdesk_sakhi_clinic_room_categories')
             .select('*')
             .eq('clinic_id', clinic_id)
             .order('name');
@@ -27,7 +27,7 @@ export class RoomAllocationService {
         const supabase = this.supabaseService.getClient();
         
         const sanitized = this.utils.sanitizePayload({ clinic_id, ...payload });
-        const { data, error } = await supabase.from('sakhi_clinic_room_categories').insert(sanitized).select().single();
+        const { data, error } = await supabase.from('opdesk_sakhi_clinic_room_categories').insert(sanitized).select().single();
         if (error) {
             if (error.code === '23505') throw new HttpException('Category name already exists', HttpStatus.CONFLICT);
             throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -42,7 +42,7 @@ export class RoomAllocationService {
         if (payload.is_active === false) {
             // Check if there are any occupied beds in this category
             const { data: occupiedBeds, error: bedError } = await supabase
-                .from('sakhi_clinic_beds')
+                .from('opdesk_sakhi_clinic_beds')
                 .select('id, sakhi_clinic_rooms!inner(category_id)')
                 .eq('status', 'occupied')
                 .eq('sakhi_clinic_rooms.category_id', id);
@@ -55,7 +55,7 @@ export class RoomAllocationService {
 
         const sanitized = this.utils.sanitizePayload(payload);
         const { data, error } = await supabase
-            .from('sakhi_clinic_room_categories')
+            .from('opdesk_sakhi_clinic_room_categories')
             .update(sanitized)
             .eq('id', id)
             .eq('clinic_id', clinic_id)
@@ -68,7 +68,7 @@ export class RoomAllocationService {
         const supabase = this.supabaseService.getClient();
         // Check if there are rooms
         const { count, error: countError } = await supabase
-            .from('sakhi_clinic_rooms')
+            .from('opdesk_sakhi_clinic_rooms')
             .select('*', { count: 'exact', head: true })
             .eq('category_id', id)
             .eq('clinic_id', clinic_id);
@@ -76,7 +76,7 @@ export class RoomAllocationService {
         if (countError) throw new HttpException(countError.message, HttpStatus.INTERNAL_SERVER_ERROR);
         if (count && count > 0) throw new HttpException('Cannot delete category with existing rooms', HttpStatus.BAD_REQUEST);
 
-        const { error } = await supabase.from('sakhi_clinic_room_categories').update({ is_active: false }).eq('id', id).eq('clinic_id', clinic_id);
+        const { error } = await supabase.from('opdesk_sakhi_clinic_room_categories').update({ is_active: false }).eq('id', id).eq('clinic_id', clinic_id);
         if (error) throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
         return { success: true };
     }
@@ -85,7 +85,7 @@ export class RoomAllocationService {
     async getRooms(clinic_id: string) {
         const supabase = this.supabaseService.getClient();
         const { data, error } = await supabase
-            .from('sakhi_clinic_rooms')
+            .from('opdesk_sakhi_clinic_rooms')
             .select('*, sakhi_clinic_room_categories(name, daily_rate)')
             .eq('clinic_id', clinic_id)
             .order('room_number');
@@ -96,11 +96,11 @@ export class RoomAllocationService {
     async createRoom(clinic_id: string, payload: any) {
         const supabase = this.supabaseService.getClient();
         // Validate category belongs to clinic
-        const { data: category } = await supabase.from('sakhi_clinic_room_categories').select('id').eq('id', payload.category_id).eq('clinic_id', clinic_id).single();
+        const { data: category } = await supabase.from('opdesk_sakhi_clinic_room_categories').select('id').eq('id', payload.category_id).eq('clinic_id', clinic_id).single();
         if (!category) throw new HttpException('Invalid category', HttpStatus.BAD_REQUEST);
 
         const sanitized = this.utils.sanitizePayload({ clinic_id, ...payload });
-        const { data, error } = await supabase.from('sakhi_clinic_rooms').insert(sanitized).select().single();
+        const { data, error } = await supabase.from('opdesk_sakhi_clinic_rooms').insert(sanitized).select().single();
         if (error) {
              if (error.code === '23505') throw new HttpException('Room number already exists', HttpStatus.CONFLICT);
              throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -111,7 +111,7 @@ export class RoomAllocationService {
     async updateRoom(clinic_id: string, id: string, payload: any) {
         const supabase = this.supabaseService.getClient();
         if (payload.category_id) {
-             const { data: category } = await supabase.from('sakhi_clinic_room_categories').select('id').eq('id', payload.category_id).eq('clinic_id', clinic_id).single();
+             const { data: category } = await supabase.from('opdesk_sakhi_clinic_room_categories').select('id').eq('id', payload.category_id).eq('clinic_id', clinic_id).single();
              if (!category) throw new HttpException('Invalid category', HttpStatus.BAD_REQUEST);
         }
 
@@ -119,7 +119,7 @@ export class RoomAllocationService {
         if (payload.is_active === false) {
             // Check if there are any occupied beds in this room
             const { data: occupiedBeds, error: bedError } = await supabase
-                .from('sakhi_clinic_beds')
+                .from('opdesk_sakhi_clinic_beds')
                 .select('id')
                 .eq('status', 'occupied')
                 .eq('room_id', id);
@@ -132,7 +132,7 @@ export class RoomAllocationService {
 
         // Edge Case: Capacity Reduction Guard
         if (payload.capacity !== undefined) {
-            const { count, error: countError } = await supabase.from('sakhi_clinic_beds').select('*', { count: 'exact', head: true }).eq('room_id', id);
+            const { count, error: countError } = await supabase.from('opdesk_sakhi_clinic_beds').select('*', { count: 'exact', head: true }).eq('room_id', id);
             if (countError) throw new HttpException(countError.message, HttpStatus.INTERNAL_SERVER_ERROR);
             if (count && count > payload.capacity) {
                 throw new HttpException(`Cannot reduce capacity to ${payload.capacity}: This room already has ${count} beds.`, HttpStatus.BAD_REQUEST);
@@ -141,7 +141,7 @@ export class RoomAllocationService {
         
         const sanitized = this.utils.sanitizePayload(payload);
         const { data, error } = await supabase
-            .from('sakhi_clinic_rooms')
+            .from('opdesk_sakhi_clinic_rooms')
             .update(sanitized)
             .eq('id', id)
             .eq('clinic_id', clinic_id)
@@ -155,7 +155,7 @@ export class RoomAllocationService {
         
         // Edge Case: Occupied Deletion Guard
         const { data: occupiedBeds, error: bedError } = await supabase
-            .from('sakhi_clinic_beds')
+            .from('opdesk_sakhi_clinic_beds')
             .select('id')
             .eq('status', 'occupied')
             .eq('room_id', id);
@@ -165,7 +165,7 @@ export class RoomAllocationService {
             throw new HttpException('Cannot delete room: There are active patients in this room.', HttpStatus.CONFLICT);
         }
 
-        const { error } = await supabase.from('sakhi_clinic_rooms').update({ is_active: false }).eq('id', id).eq('clinic_id', clinic_id);
+        const { error } = await supabase.from('opdesk_sakhi_clinic_rooms').update({ is_active: false }).eq('id', id).eq('clinic_id', clinic_id);
         if (error) throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
         return { success: true };
     }
@@ -173,7 +173,7 @@ export class RoomAllocationService {
     async getAvailableRooms(clinic_id: string, tier?: string) {
         const supabase = this.supabaseService.getClient();
         let query = supabase
-            .from('sakhi_clinic_rooms')
+            .from('opdesk_sakhi_clinic_rooms')
             .select(`
                 id, room_number, floor, capacity,
                 sakhi_clinic_room_categories!inner(id, name, daily_rate),
@@ -195,7 +195,7 @@ export class RoomAllocationService {
     async getBeds(clinic_id: string, status?: string) {
         const supabase = this.supabaseService.getClient();
         let query = supabase
-            .from('sakhi_clinic_beds')
+            .from('opdesk_sakhi_clinic_beds')
             .select('*, sakhi_clinic_rooms!inner(id, room_number, clinic_id, sakhi_clinic_room_categories(id, name, daily_rate))')
             .eq('sakhi_clinic_rooms.clinic_id', clinic_id)
             .order('bed_identifier');
@@ -212,7 +212,7 @@ export class RoomAllocationService {
         const supabase = this.supabaseService.getClient();
         
         // Validate bed belongs to clinic
-        const { data: bed } = await supabase.from('sakhi_clinic_beds').select('id, status, sakhi_clinic_rooms!inner(clinic_id)').eq('id', id).eq('sakhi_clinic_rooms.clinic_id', clinic_id).single();
+        const { data: bed } = await supabase.from('opdesk_sakhi_clinic_beds').select('id, status, sakhi_clinic_rooms!inner(clinic_id)').eq('id', id).eq('sakhi_clinic_rooms.clinic_id', clinic_id).single();
         if (!bed) throw new HttpException('Invalid bed', HttpStatus.BAD_REQUEST);
 
         // Edge Case: Deactivation Guard
@@ -222,7 +222,7 @@ export class RoomAllocationService {
 
         const sanitized = this.utils.sanitizePayload(payload);
         const { data, error } = await supabase
-            .from('sakhi_clinic_beds')
+            .from('opdesk_sakhi_clinic_beds')
             .update(sanitized)
             .eq('id', id)
             .select().single();
@@ -237,16 +237,16 @@ export class RoomAllocationService {
     async createBed(clinic_id: string, roomId: string, payload: any) {
         const supabase = this.supabaseService.getClient();
         // Validate room belongs to clinic and check capacity
-        const { data: room } = await supabase.from('sakhi_clinic_rooms').select('id, capacity').eq('id', roomId).eq('clinic_id', clinic_id).single();
+        const { data: room } = await supabase.from('opdesk_sakhi_clinic_rooms').select('id, capacity').eq('id', roomId).eq('clinic_id', clinic_id).single();
         if (!room) throw new HttpException('Invalid room', HttpStatus.BAD_REQUEST);
 
-        const { count } = await supabase.from('sakhi_clinic_beds').select('*', { count: 'exact', head: true }).eq('room_id', roomId);
+        const { count } = await supabase.from('opdesk_sakhi_clinic_beds').select('*', { count: 'exact', head: true }).eq('room_id', roomId);
         if (count && count >= room.capacity) {
             throw new HttpException('Room capacity exceeded', HttpStatus.BAD_REQUEST);
         }
 
         const sanitized = this.utils.sanitizePayload({ room_id: roomId, ...payload });
-        const { data, error } = await supabase.from('sakhi_clinic_beds').insert(sanitized).select().single();
+        const { data, error } = await supabase.from('opdesk_sakhi_clinic_beds').insert(sanitized).select().single();
         if (error) {
             if (error.code === '23505') throw new HttpException('Bed identifier already exists in this room', HttpStatus.CONFLICT);
             throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
@@ -257,7 +257,7 @@ export class RoomAllocationService {
     async updateBedStatus(clinic_id: string, id: string, status: string) {
         const supabase = this.supabaseService.getClient();
         // Validate bed belongs to clinic
-        const { data: bed } = await supabase.from('sakhi_clinic_beds').select('id, status, sakhi_clinic_rooms!inner(clinic_id)').eq('id', id).eq('sakhi_clinic_rooms.clinic_id', clinic_id).single();
+        const { data: bed } = await supabase.from('opdesk_sakhi_clinic_beds').select('id, status, sakhi_clinic_rooms!inner(clinic_id)').eq('id', id).eq('sakhi_clinic_rooms.clinic_id', clinic_id).single();
         if (!bed) throw new HttpException('Invalid bed', HttpStatus.BAD_REQUEST);
 
         // Edge Case: Manual Override Guard
@@ -266,13 +266,13 @@ export class RoomAllocationService {
         }
         if (status === 'maintenance') {
             // Ensure no active assignments exist (should be handled by the occupied check, but double-checking)
-            const { count } = await supabase.from('sakhi_clinic_bed_assignments').select('*', { count: 'exact', head: true }).eq('bed_id', id).eq('is_current', true);
+            const { count } = await supabase.from('opdesk_sakhi_clinic_bed_assignments').select('*', { count: 'exact', head: true }).eq('bed_id', id).eq('is_current', true);
             if (count && count > 0) {
                  throw new HttpException('Cannot mark bed as maintenance: It has an active assignment.', HttpStatus.CONFLICT);
             }
         }
 
-        const { data, error } = await supabase.from('sakhi_clinic_beds').update({ status }).eq('id', id).select().single();
+        const { data, error } = await supabase.from('opdesk_sakhi_clinic_beds').update({ status }).eq('id', id).select().single();
         if (error) throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
         return data;
     }
@@ -281,7 +281,7 @@ export class RoomAllocationService {
         const supabase = this.supabaseService.getClient();
         
         // Validate bed belongs to clinic
-        const { data: bed } = await supabase.from('sakhi_clinic_beds').select('id, status, sakhi_clinic_rooms!inner(clinic_id)').eq('id', id).eq('sakhi_clinic_rooms.clinic_id', clinic_id).single();
+        const { data: bed } = await supabase.from('opdesk_sakhi_clinic_beds').select('id, status, sakhi_clinic_rooms!inner(clinic_id)').eq('id', id).eq('sakhi_clinic_rooms.clinic_id', clinic_id).single();
         if (!bed) throw new HttpException('Invalid bed', HttpStatus.BAD_REQUEST);
 
         // Edge Case: Occupied Deletion Guard
@@ -289,7 +289,7 @@ export class RoomAllocationService {
             throw new HttpException('Cannot delete bed: It is currently occupied by a patient.', HttpStatus.CONFLICT);
         }
 
-        const { error } = await supabase.from('sakhi_clinic_beds').update({ is_active: false }).eq('id', id);
+        const { error } = await supabase.from('opdesk_sakhi_clinic_beds').update({ is_active: false }).eq('id', id);
         if (error) throw new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR);
         return { success: true };
     }
@@ -298,7 +298,7 @@ export class RoomAllocationService {
     async getAdmissions(clinic_id: string, status?: string) {
         const supabase = this.supabaseService.getClient();
         let query = supabase
-            .from('sakhi_clinic_admissions')
+            .from('opdesk_sakhi_clinic_admissions')
             .select('*, patient:sakhi_clinic_patients(name, mobile), sakhi_clinic_bed_assignments(id, bed_id, daily_rate_snapshot, assigned_at, is_current, sakhi_clinic_beds(bed_identifier, room_id, sakhi_clinic_rooms(room_number, sakhi_clinic_room_categories(name))))')
             .eq('clinic_id', clinic_id)
             .order('admission_date', { ascending: false });
@@ -316,12 +316,12 @@ export class RoomAllocationService {
         const { patient_id, bed_id, admitting_doctor_id, diagnosis, notes } = payload;
 
         // 1. Validate patient belongs to clinic
-        const { data: patient } = await supabase.from('sakhi_clinic_patients').select('id').eq('id', patient_id).eq('clinic_id', clinic_id).single();
+        const { data: patient } = await supabase.from('opdesk_sakhi_clinic_patients').select('id').eq('id', patient_id).eq('clinic_id', clinic_id).single();
         if (!patient) throw new HttpException('Invalid patient', HttpStatus.BAD_REQUEST);
 
         // 2. Validate bed exists globally to enforce strict 403 on cross-tenant attempts
         const { data: bedCheck } = await supabase
-            .from('sakhi_clinic_beds')
+            .from('opdesk_sakhi_clinic_beds')
             .select('id, status, sakhi_clinic_rooms!inner(clinic_id, sakhi_clinic_room_categories(daily_rate))')
             .eq('id', bed_id)
             .single();
@@ -356,8 +356,8 @@ export class RoomAllocationService {
         }
 
         // Fetch the newly created records to return
-        const { data: admission } = await supabase.from('sakhi_clinic_admissions').select('*').eq('id', rpcData.admission_id).single();
-        const { data: assignment } = await supabase.from('sakhi_clinic_bed_assignments').select('*').eq('id', rpcData.assignment_id).single();
+        const { data: admission } = await supabase.from('opdesk_sakhi_clinic_admissions').select('*').eq('id', rpcData.admission_id).single();
+        const { data: assignment } = await supabase.from('opdesk_sakhi_clinic_bed_assignments').select('*').eq('id', rpcData.assignment_id).single();
 
         return { admission, assignment };
     }
@@ -365,7 +365,7 @@ export class RoomAllocationService {
     async dischargeAdmission(clinic_id: string, admission_id: string) {
          const supabase = this.supabaseService.getClient();
          // Validate admission
-         const { data: admission } = await supabase.from('sakhi_clinic_admissions').select('id, status, admission_date').eq('id', admission_id).eq('clinic_id', clinic_id).single();
+         const { data: admission } = await supabase.from('opdesk_sakhi_clinic_admissions').select('id, status, admission_date').eq('id', admission_id).eq('clinic_id', clinic_id).single();
          if (!admission) throw new HttpException('Admission not found', HttpStatus.NOT_FOUND);
          if (admission.status !== 'admitted') throw new HttpException('Admission is not currently active', HttpStatus.BAD_REQUEST);
 
@@ -378,17 +378,17 @@ export class RoomAllocationService {
          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Round up to count partial days as full days
 
          // 1. Update admission status
-         const { error: admError } = await supabase.from('sakhi_clinic_admissions').update({ status: 'discharged', discharge_date: nowIso }).eq('id', admission_id);
+         const { error: admError } = await supabase.from('opdesk_sakhi_clinic_admissions').update({ status: 'discharged', discharge_date: nowIso }).eq('id', admission_id);
          if (admError) throw new HttpException(admError.message, HttpStatus.INTERNAL_SERVER_ERROR);
 
          // 2. Find current bed assignment
-         const { data: assignment } = await supabase.from('sakhi_clinic_bed_assignments').select('id, bed_id').eq('admission_id', admission_id).eq('is_current', true).single();
+         const { data: assignment } = await supabase.from('opdesk_sakhi_clinic_bed_assignments').select('id, bed_id').eq('admission_id', admission_id).eq('is_current', true).single();
          if (assignment) {
              // 3. Release bed assignment
-             await supabase.from('sakhi_clinic_bed_assignments').update({ is_current: false, released_at: nowIso }).eq('id', assignment.id);
+             await supabase.from('opdesk_sakhi_clinic_bed_assignments').update({ is_current: false, released_at: nowIso }).eq('id', assignment.id);
              
              // 4. Update bed status
-             await supabase.from('sakhi_clinic_beds').update({ status: 'available' }).eq('id', assignment.bed_id);
+             await supabase.from('opdesk_sakhi_clinic_beds').update({ status: 'available' }).eq('id', assignment.bed_id);
          }
 
          return { success: true, days_spent: diffDays };
@@ -398,24 +398,24 @@ export class RoomAllocationService {
         const supabase = this.supabaseService.getClient();
         
         // Validate admission
-        const { data: admission } = await supabase.from('sakhi_clinic_admissions').select('id, status').eq('id', admission_id).eq('clinic_id', clinic_id).single();
+        const { data: admission } = await supabase.from('opdesk_sakhi_clinic_admissions').select('id, status').eq('id', admission_id).eq('clinic_id', clinic_id).single();
         if (!admission) throw new HttpException('Admission not found', HttpStatus.NOT_FOUND);
         if (admission.status !== 'admitted') throw new HttpException('Only currently admitted patients can be cancelled', HttpStatus.BAD_REQUEST);
 
         const now = new Date().toISOString();
 
         // 1. Update admission status to cancelled (DO NOT set discharge_date)
-        const { error: admError } = await supabase.from('sakhi_clinic_admissions').update({ status: 'cancelled', updated_at: now }).eq('id', admission_id);
+        const { error: admError } = await supabase.from('opdesk_sakhi_clinic_admissions').update({ status: 'cancelled', updated_at: now }).eq('id', admission_id);
         if (admError) throw new HttpException(admError.message, HttpStatus.INTERNAL_SERVER_ERROR);
 
         // 2. Find current bed assignment
-        const { data: assignment } = await supabase.from('sakhi_clinic_bed_assignments').select('id, bed_id').eq('admission_id', admission_id).eq('is_current', true).single();
+        const { data: assignment } = await supabase.from('opdesk_sakhi_clinic_bed_assignments').select('id, bed_id').eq('admission_id', admission_id).eq('is_current', true).single();
         if (assignment) {
             // 3. Release bed assignment
-            await supabase.from('sakhi_clinic_bed_assignments').update({ is_current: false, released_at: now }).eq('id', assignment.id);
+            await supabase.from('opdesk_sakhi_clinic_bed_assignments').update({ is_current: false, released_at: now }).eq('id', assignment.id);
             
             // 4. Update bed status
-            await supabase.from('sakhi_clinic_beds').update({ status: 'available' }).eq('id', assignment.bed_id);
+            await supabase.from('opdesk_sakhi_clinic_beds').update({ status: 'available' }).eq('id', assignment.bed_id);
         }
 
         return { success: true };
@@ -426,13 +426,13 @@ export class RoomAllocationService {
         const { new_bed_id } = payload;
         
         // Validate admission
-        const { data: admission } = await supabase.from('sakhi_clinic_admissions').select('id, status').eq('id', admission_id).eq('clinic_id', clinic_id).single();
+        const { data: admission } = await supabase.from('opdesk_sakhi_clinic_admissions').select('id, status').eq('id', admission_id).eq('clinic_id', clinic_id).single();
         if (!admission) throw new HttpException('Admission not found', HttpStatus.NOT_FOUND);
         if (admission.status !== 'admitted') throw new HttpException('Admission is not currently active', HttpStatus.BAD_REQUEST);
 
         // Validate new bed
         const { data: newBed } = await supabase
-            .from('sakhi_clinic_beds')
+            .from('opdesk_sakhi_clinic_beds')
             .select('id, status, sakhi_clinic_rooms!inner(clinic_id, sakhi_clinic_room_categories(daily_rate))')
             .eq('id', new_bed_id)
             .eq('sakhi_clinic_rooms.clinic_id', clinic_id)
@@ -466,7 +466,7 @@ export class RoomAllocationService {
         
         // Get all beds in clinic
         const { data: beds, error: bedsError } = await supabase
-            .from('sakhi_clinic_beds')
+            .from('opdesk_sakhi_clinic_beds')
             .select('status, sakhi_clinic_rooms!inner(clinic_id, sakhi_clinic_room_categories(name))')
             .eq('sakhi_clinic_rooms.clinic_id', clinic_id);
             

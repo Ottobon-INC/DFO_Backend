@@ -14,7 +14,7 @@ export class ConsentRepository {
 
   async getConsentByPatientId(patientId: string): Promise<ConsentPreferences | null> {
     const { data, error } = await this.supabase
-      .from('patient_consents')
+      .from('opdesk_patient_consents')
       .select('preferences_encrypted')
       .eq('patient_id', patientId)
       .maybeSingle();
@@ -49,7 +49,7 @@ export class ConsentRepository {
     const encrypted = this.encryption.encrypt(JSON.stringify(preferences));
 
     const { error } = await this.supabase
-      .from('patient_consents')
+      .from('opdesk_patient_consents')
       .upsert({
         patient_id: patientId,
         clinic_id: clinicId,

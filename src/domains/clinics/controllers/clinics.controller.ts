@@ -20,7 +20,7 @@ export class ClinicsController {
 
         try {
             const { data, error } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .select('id, first_name, last_name, specialization, role')
                 .eq('clinic_id', clinic_id)
                 .in('role', ['Doctor', 'Superadmin', 'Admin'])
