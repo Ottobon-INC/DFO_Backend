@@ -18,7 +18,7 @@ export class SupportEngagementService {
         this.logger.log(`Creating support ticket for patient: ${dto.patient_name || 'unknown'}`);
         
         const { data, error } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .insert([{
                 thread_id: dto.thread_id || null,
                 patient_id: dto.patient_id || null,
@@ -57,7 +57,7 @@ export class SupportEngagementService {
         this.logger.log(`Assigning ticket ${ticketId} to user ${userId}`);
 
         const { data: ticket, error: fetchError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .select('*')
             .eq('id', ticketId)
             .maybeSingle();
@@ -76,7 +76,7 @@ export class SupportEngagementService {
         }
 
         const { data: updatedTicket, error: updateError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .update(updates)
             .eq('id', ticketId)
             .select()
@@ -110,7 +110,7 @@ export class SupportEngagementService {
         this.logger.log(`Escalating support ticket ${ticketId} to human. Reason: ${reason}`);
 
         const { data: ticket, error: fetchError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .select('*')
             .eq('id', ticketId)
             .maybeSingle();
@@ -147,7 +147,7 @@ export class SupportEngagementService {
 
         // Update ticket status to ESCALATED
         const { data: updatedTicket, error: updateError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .update({
                 status: 'ESCALATED',
                 priority: 'CRITICAL', // Escalate priority to CRITICAL on human escalation
@@ -173,7 +173,7 @@ export class SupportEngagementService {
         this.logger.log(`Updating ticket ${ticketId} status to ${status}, priority to ${priority}`);
 
         const { data: ticket, error: fetchError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .select('*')
             .eq('id', ticketId)
             .maybeSingle();
@@ -190,7 +190,7 @@ export class SupportEngagementService {
         if (priority) updates.priority = priority;
 
         const { data: updatedTicket, error: updateError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .update(updates)
             .eq('id', ticketId)
             .select()
@@ -216,7 +216,7 @@ export class SupportEngagementService {
         this.logger.log(`Sending support message for ticket ${ticketId}`);
 
         const { data: ticket, error: fetchError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .select('*')
             .eq('id', ticketId)
             .maybeSingle();
@@ -248,7 +248,7 @@ export class SupportEngagementService {
 
         // Touch the ticket's updated_at
         await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .update({ updated_at: new Date().toISOString() })
             .eq('id', ticketId);
 
@@ -262,7 +262,7 @@ export class SupportEngagementService {
 
     async getSupportConversation(ticketId: string) {
         const { data: ticket, error: fetchError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .select('*')
             .eq('id', ticketId)
             .maybeSingle();
@@ -282,7 +282,7 @@ export class SupportEngagementService {
         this.logger.log(`Resolving support ticket ${ticketId}`);
 
         const { data: ticket, error: fetchError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .select('*')
             .eq('id', ticketId)
             .maybeSingle();
@@ -293,7 +293,7 @@ export class SupportEngagementService {
 
         // Update ticket to RESOLVED
         const { data: updatedTicket, error: updateError } = await this.supabase
-            .from('opdesk_dfo_support_tickets')
+            .from('dfo_support_tickets')
             .update({
                 status: 'RESOLVED',
                 updated_at: new Date().toISOString()
@@ -329,7 +329,7 @@ export class SupportEngagementService {
     }
 
     async getTickets(filters: { status?: string; priority?: string }) {
-        let query = this.supabase.from('opdesk_dfo_support_tickets').select('*');
+        let query = this.supabase.from('dfo_support_tickets').select('*');
         if (filters.status) {
             query = query.eq('status', filters.status);
         }

@@ -13,7 +13,7 @@ export class SchedulesService {
         const supabase = this.supabaseService.getClient();
         
         let query = supabase
-            .from('opdesk_sakhi_clinic_doctor_schedules')
+            .from('sakhi_clinic_doctor_schedules')
             .select('*')
             .eq('doctor_id', doctorId)
             .eq('is_active', true)
@@ -41,7 +41,7 @@ export class SchedulesService {
         let resolvedClinicId = clinicId;
         if (!resolvedClinicId || resolvedClinicId.trim() === '') {
             const { data: docData } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('clinic_id')
                 .eq('id', doctorId)
                 .single();
@@ -52,7 +52,7 @@ export class SchedulesService {
 
         // 1. Delete existing template schedules for this doctor
         let deleteQuery = supabase
-            .from('opdesk_sakhi_clinic_doctor_schedules')
+            .from('sakhi_clinic_doctor_schedules')
             .delete()
             .eq('doctor_id', doctorId);
 
@@ -83,7 +83,7 @@ export class SchedulesService {
             }));
 
             const { data, error: insertError } = await supabase
-                .from('opdesk_sakhi_clinic_doctor_schedules')
+                .from('sakhi_clinic_doctor_schedules')
                 .insert(insertPayload)
                 .select();
 
@@ -113,7 +113,7 @@ export class SchedulesService {
         let resolvedClinicId = clinicId;
         if (!resolvedClinicId || resolvedClinicId.trim() === '') {
             const { data: docData } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('clinic_id')
                 .eq('id', doctorId)
                 .single();
@@ -136,7 +136,7 @@ export class SchedulesService {
         let doctorLeaves: string[] = [];
         try {
             let leaveQuery = supabase
-                .from('opdesk_sakhi_clinic_doctor_leaves')
+                .from('sakhi_clinic_doctor_leaves')
                 .select('leave_date')
                 .eq('doctor_id', doctorId)
                 .gte('leave_date', dateStrStart)
@@ -152,7 +152,7 @@ export class SchedulesService {
 
         // Delete unbooked slots in the target range to prevent stale slot records
         let delQuery = supabase
-            .from('opdesk_sakhi_clinic_availability_slots')
+            .from('sakhi_clinic_availability_slots')
             .delete()
             .eq('doctor_id', doctorId)
             .gte('slot_date', dateStrStart)
@@ -219,7 +219,7 @@ export class SchedulesService {
             for (let i = 0; i < slotsToInsert.length; i += batchSize) {
                 const batch = slotsToInsert.slice(i, i + batchSize);
                 const { error: upsertErr } = await supabase
-                    .from('opdesk_sakhi_clinic_availability_slots')
+                    .from('sakhi_clinic_availability_slots')
                     .upsert(batch, { onConflict: 'doctor_id, slot_date, start_time', ignoreDuplicates: true });
                 
                 if (upsertErr) {
@@ -233,7 +233,7 @@ export class SchedulesService {
     async getAvailableSlots(clinicId: string, doctorId: string, startDate?: string, endDate?: string): Promise<any[]> {
         const supabase = this.supabaseService.getClient();
         let query = supabase
-            .from('opdesk_sakhi_clinic_availability_slots')
+            .from('sakhi_clinic_availability_slots')
             .select('*')
             .eq('doctor_id', doctorId)
             .order('slot_date', { ascending: true })
@@ -268,7 +268,7 @@ export class SchedulesService {
         let resolvedClinicId = clinicId;
         if (!resolvedClinicId || resolvedClinicId.trim() === '') {
             const { data: docData } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('clinic_id')
                 .eq('id', doctorId)
                 .single();
@@ -280,7 +280,7 @@ export class SchedulesService {
         // 1. Record in leaves table
         try {
             await supabase
-                .from('opdesk_sakhi_clinic_doctor_leaves')
+                .from('sakhi_clinic_doctor_leaves')
                 .upsert({
                     clinic_id: resolvedClinicId || '00000000-0000-0000-0000-000000000000',
                     doctor_id: doctorId,
@@ -295,7 +295,7 @@ export class SchedulesService {
 
         // 2. Mark unbooked slots on that day as 'LEAVE'
         await supabase
-            .from('opdesk_sakhi_clinic_availability_slots')
+            .from('sakhi_clinic_availability_slots')
             .update({ status: 'LEAVE', block_reason: reason })
             .eq('doctor_id', doctorId)
             .eq('slot_date', leaveDate)
@@ -310,7 +310,7 @@ export class SchedulesService {
         // 1. Delete from leaves table
         try {
             await supabase
-                .from('opdesk_sakhi_clinic_doctor_leaves')
+                .from('sakhi_clinic_doctor_leaves')
                 .delete()
                 .eq('doctor_id', doctorId)
                 .eq('leave_date', leaveDate);
@@ -318,7 +318,7 @@ export class SchedulesService {
 
         // 2. Reset unbooked slots on that day back to 'AVAILABLE'
         await supabase
-            .from('opdesk_sakhi_clinic_availability_slots')
+            .from('sakhi_clinic_availability_slots')
             .update({ status: 'AVAILABLE', block_reason: null })
             .eq('doctor_id', doctorId)
             .eq('slot_date', leaveDate)
@@ -331,7 +331,7 @@ export class SchedulesService {
         const supabase = this.supabaseService.getClient();
         try {
             let query = supabase
-                .from('opdesk_sakhi_clinic_doctor_leaves')
+                .from('sakhi_clinic_doctor_leaves')
                 .select('*')
                 .eq('doctor_id', doctorId)
                 .order('leave_date', { ascending: true });

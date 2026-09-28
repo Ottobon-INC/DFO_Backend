@@ -60,7 +60,7 @@ export class QmsEngineService {
         const supabase = this.supabaseService.getClient();
 
         const { data: appt, error: fetchErr } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('queue_status, doctor_id, token_number')
             .eq('id', appointmentId)
             .eq('clinic_id', tenantId)
@@ -83,7 +83,7 @@ export class QmsEngineService {
         if (newStatus === 'COMPLETED') updateData.completed_at = now;
 
         const { data, error } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .update(updateData)
             .eq('id', appointmentId)
             .select()
@@ -92,7 +92,7 @@ export class QmsEngineService {
         if (error) throw error;
 
         // Log Audit
-        await supabase.from('opdesk_qms_audit_logs').insert({
+        await supabase.from('qms_audit_logs').insert({
             tenant_id: tenantId,
             appointment_id: appointmentId,
             action: 'TRANSITION',
@@ -169,7 +169,7 @@ export class QmsEngineService {
         const supabase = (this.supabaseService as any).getAdminClient ? (this.supabaseService as any).getAdminClient() : this.supabaseService.getClient();
 
         const { data: orphans } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('id, clinic_id')
             .eq('queue_status', 'BOOKED')
             .is('token_number', null)
@@ -198,7 +198,7 @@ export class QmsEngineService {
 
         try {
             const { data: staleAppts, error } = await supabase
-                .from('opdesk_sakhi_clinic_appointments')
+                .from('sakhi_clinic_appointments')
                 .select('id, clinic_id, doctor_id, patient_id, appointment_date, start_time, status')
                 .lt('appointment_date', todayStr)
                 .in('status', ['Checked-In', 'Arrived', 'In-Consultation', 'Scheduled', 'Expected'])
@@ -211,9 +211,9 @@ export class QmsEngineService {
                     let hasClinicalData = false;
                     if (appt.patient_id) {
                         const [notes, rx, vitals] = await Promise.all([
-                            supabase.from('opdesk_sakhi_clinical_notes').select('id').eq('patient_id', appt.patient_id).limit(1),
-                            supabase.from('opdesk_sakhi_clinic_prescriptions').select('id').eq('patient_id', appt.patient_id).limit(1),
-                            supabase.from('opdesk_sakhi_clinic_patient_vitals').select('id').eq('patient_id', appt.patient_id).limit(1)
+                            supabase.from('sakhi_clinical_notes').select('id').eq('patient_id', appt.patient_id).limit(1),
+                            supabase.from('sakhi_clinic_prescriptions').select('id').eq('patient_id', appt.patient_id).limit(1),
+                            supabase.from('sakhi_clinic_patient_vitals').select('id').eq('patient_id', appt.patient_id).limit(1)
                         ]);
                         hasClinicalData = Boolean((notes.data && notes.data.length > 0) || (rx.data && rx.data.length > 0) || (vitals.data && vitals.data.length > 0));
                     }
@@ -232,7 +232,7 @@ export class QmsEngineService {
                         updatePayload.cancelled_at = new Date().toISOString();
                     }
 
-                    await supabase.from('opdesk_sakhi_clinic_appointments').update(updatePayload).eq('id', appt.id);
+                    await supabase.from('sakhi_clinic_appointments').update(updatePayload).eq('id', appt.id);
                 } catch (innerErr: any) {
                     this.logger.error(`Failed to reconcile stale appointment ${appt.id}: ${innerErr.message}`);
                 }

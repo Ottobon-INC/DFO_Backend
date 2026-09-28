@@ -36,7 +36,7 @@ export class SuperAdminAuthController {
             
             // Query ONLY the decoupled super_admins table
             const { data: user, error } = await supabase
-                .from('opdesk_super_admins')
+                .from('super_admins')
                 .select('*')
                 .eq('email', email)
                 .single();
@@ -76,14 +76,14 @@ export class SuperAdminAuthController {
                     const lockUntilDate = new Date(new Date().getTime() + 15 * 60000);
                     updateData.locked_until = lockUntilDate.toISOString();
                 }
-                await supabase.from('opdesk_super_admins').update(updateData).eq('id', user.id);
+                await supabase.from('super_admins').update(updateData).eq('id', user.id);
 
                 throw new HttpException({ success: false, error: 'Invalid super admin credentials' }, HttpStatus.UNAUTHORIZED);
             }
 
             // Successful login -> Reset lockout
             const updateSuccessData: any = { failed_attempts: 0, locked_until: null };
-            await supabase.from('opdesk_super_admins').update(updateSuccessData).eq('id', user.id);
+            await supabase.from('super_admins').update(updateSuccessData).eq('id', user.id);
 
             // Issue JWT with super admin claims
             const token = jwt.sign(
@@ -142,7 +142,7 @@ export class SuperAdminAuthController {
 
             // Insert into super_admins table
             const { data: newUser, error } = await supabase
-                .from('opdesk_super_admins')
+                .from('super_admins')
                 .insert([{ name, email, password_hash }])
                 .select()
                 .single();

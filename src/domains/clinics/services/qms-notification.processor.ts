@@ -19,7 +19,7 @@ export class QmsNotificationProcessor {
         try {
             // 1. Mark expired notifications
             await supabase
-                .from('opdesk_qms_notifications_outbox')
+                .from('qms_notifications_outbox')
                 .update({ status: 'EXPIRED' })
                 .eq('status', 'PENDING')
                 .lt('expires_at', new Date().toISOString());
@@ -27,7 +27,7 @@ export class QmsNotificationProcessor {
             // 2. Fetch up to 50 pending notifications (Rate Limit) ordered by priority
             // In a multi-instance env, use RPC with FOR UPDATE SKIP LOCKED
             const { data: messages, error } = await supabase
-                .from('opdesk_qms_notifications_outbox')
+                .from('qms_notifications_outbox')
                 .select('*')
                 .eq('status', 'PENDING')
                 .lte('next_attempt_at', new Date().toISOString())
@@ -49,7 +49,7 @@ export class QmsNotificationProcessor {
                     
                     // On Success:
                     await supabase
-                        .from('opdesk_qms_notifications_outbox')
+                        .from('qms_notifications_outbox')
                         .update({ status: 'DELIVERED', attempts: msg.attempts + 1 })
                         .eq('id', msg.id);
 
@@ -62,7 +62,7 @@ export class QmsNotificationProcessor {
                     nextAttempt.setMinutes(nextAttempt.getMinutes() + (newAttempts * 2)); // 2m, 4m, 6m
 
                     await supabase
-                        .from('opdesk_qms_notifications_outbox')
+                        .from('qms_notifications_outbox')
                         .update({ 
                             status, 
                             attempts: newAttempts, 

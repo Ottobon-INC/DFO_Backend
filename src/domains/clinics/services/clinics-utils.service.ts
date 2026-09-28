@@ -28,7 +28,7 @@ export class ClinicsUtilsService {
         const year = now.getFullYear();
 
         const { data, error } = await supabase
-            .from('opdesk_sakhi_clinic_patients')
+            .from('sakhi_clinic_patients')
             .select('uhid')
             .ilike('uhid', `JAN-${year}-%`);
 
@@ -56,7 +56,7 @@ export class ClinicsUtilsService {
 
     async backfillPatientSnapshot(supabase: SupabaseClient, appointmentId: string): Promise<void> {
         const { data: appointment, error: appointmentError } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('id, patient_id, patient_name_snapshot, patient_phone_snapshot, patient_dob_snapshot')
             .eq('id', appointmentId)
             .single();
@@ -76,7 +76,7 @@ export class ClinicsUtilsService {
         if (hasSnapshots) return;
 
         const { data: patient, error: patientError } = await supabase
-            .from('opdesk_sakhi_clinic_patients')
+            .from('sakhi_clinic_patients')
             .select('name, mobile, dob')
             .eq('id', appointment.patient_id)
             .single();
@@ -96,7 +96,7 @@ export class ClinicsUtilsService {
 
         if (!Object.keys(updates).length) return;
 
-        await supabase.from('opdesk_sakhi_clinic_appointments').update(updates).eq('id', appointmentId);
+        await supabase.from('sakhi_clinic_appointments').update(updates).eq('id', appointmentId);
     }
 
     normalizeTime(timeStr?: string): string {
@@ -120,7 +120,7 @@ export class ClinicsUtilsService {
 
         // 0. Check doctor leaves
         const { data: leaves, error: leavesError } = await supabase
-            .from('opdesk_sakhi_clinic_doctor_leaves')
+            .from('sakhi_clinic_doctor_leaves')
             .select('*')
             .eq('doctor_id', doctorId)
             .eq('leave_date', appointmentDate);
@@ -133,7 +133,7 @@ export class ClinicsUtilsService {
         const dateObj = new Date(appointmentDate);
         const dayOfWeek = dateObj.getDay();
         const { data: schedules, error: schedulesError } = await supabase
-            .from('opdesk_sakhi_clinic_doctor_schedules')
+            .from('sakhi_clinic_doctor_schedules')
             .select('*')
             .eq('doctor_id', doctorId)
             .eq('day_of_week', dayOfWeek)
@@ -156,7 +156,7 @@ export class ClinicsUtilsService {
 
         // 1. Check if doctor availability slots exist for this date
         const { data: slots, error: slotsError } = await supabase
-            .from('opdesk_sakhi_clinic_availability_slots')
+            .from('sakhi_clinic_availability_slots')
             .select('*')
             .eq('doctor_id', doctorId)
             .eq('slot_date', appointmentDate);
@@ -183,7 +183,7 @@ export class ClinicsUtilsService {
 
         // 2. Check overlapping appointments to ensure we haven't exceeded capacity
         let query = supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('id, clinic_id, start_time, end_time')
             .eq('doctor_id', doctorId)
             .eq('appointment_date', appointmentDate)
@@ -222,7 +222,7 @@ export class ClinicsUtilsService {
     async incrementSlotBooking(supabase: SupabaseClient, doctorId: string, date: string, startTime: string): Promise<void> {
         const normStartTime = this.normalizeTime(startTime);
         const { data: slots } = await supabase
-            .from('opdesk_sakhi_clinic_availability_slots')
+            .from('sakhi_clinic_availability_slots')
             .select('id, booked_count, start_time, end_time')
             .eq('doctor_id', doctorId)
             .eq('slot_date', date);
@@ -235,7 +235,7 @@ export class ClinicsUtilsService {
 
         if (matchingSlot) {
             await supabase
-                .from('opdesk_sakhi_clinic_availability_slots')
+                .from('sakhi_clinic_availability_slots')
                 .update({ booked_count: (matchingSlot.booked_count || 0) + 1 })
                 .eq('id', matchingSlot.id);
         }
@@ -244,7 +244,7 @@ export class ClinicsUtilsService {
     async decrementSlotBooking(supabase: SupabaseClient, doctorId: string, date: string, startTime: string): Promise<void> {
         const normStartTime = this.normalizeTime(startTime);
         const { data: slots } = await supabase
-            .from('opdesk_sakhi_clinic_availability_slots')
+            .from('sakhi_clinic_availability_slots')
             .select('id, booked_count, start_time, end_time')
             .eq('doctor_id', doctorId)
             .eq('slot_date', date);
@@ -257,7 +257,7 @@ export class ClinicsUtilsService {
 
         if (matchingSlot && matchingSlot.booked_count > 0) {
             await supabase
-                .from('opdesk_sakhi_clinic_availability_slots')
+                .from('sakhi_clinic_availability_slots')
                 .update({ booked_count: matchingSlot.booked_count - 1 })
                 .eq('id', matchingSlot.id);
         }

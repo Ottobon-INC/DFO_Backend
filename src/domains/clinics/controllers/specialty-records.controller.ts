@@ -27,7 +27,7 @@ export class SpecialtyRecordsController {
 
         const supabase = this.supabaseService.getClient();
         const { data: clinic, error } = await supabase
-            .from('opdesk_clinics')
+            .from('clinics')
             .select('name, specialty')
             .eq('id', clinicId)
             .single();

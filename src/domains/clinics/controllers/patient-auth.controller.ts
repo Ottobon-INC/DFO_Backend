@@ -41,7 +41,7 @@ export class PatientAuthController {
             const last10 = rawDigits.length >= 10 ? rawDigits.slice(-10) : rawDigits;
 
             let patientQuery = supabase
-                .from('opdesk_sakhi_clinic_patients')
+                .from('sakhi_clinic_patients')
                 .select('id, clinic_id, name, mobile, uhid, pin_hash, failed_attempts, locked_until');
 
             if (last10.length >= 7) {
@@ -100,14 +100,14 @@ export class PatientAuthController {
                     isPinValid = true;
                     // Auto upgrade to bcrypt hash
                     const newHash = await bcrypt.hash(pin, 10);
-                    await supabase.from('opdesk_sakhi_clinic_patients').update({ pin_hash: newHash }).eq('id', patient.id);
+                    await supabase.from('sakhi_clinic_patients').update({ pin_hash: newHash }).eq('id', patient.id);
                 }
             } else {
                 // If patient has no PIN setup yet, allow initial PIN creation if PIN is 4-6 numeric digits
                 if (/^\d{4,6}$/.test(pin)) {
                     this.logger.log(`Initializing first-time PIN for patient ${patient.id}`);
                     const newHash = await bcrypt.hash(pin, 10);
-                    await supabase.from('opdesk_sakhi_clinic_patients').update({ pin_hash: newHash }).eq('id', patient.id);
+                    await supabase.from('sakhi_clinic_patients').update({ pin_hash: newHash }).eq('id', patient.id);
                     isPinValid = true;
                 } else {
                     throw new HttpException({ success: false, error: 'No PIN has been set for this patient. Please enter a 4-6 digit numeric PIN.' }, HttpStatus.UNAUTHORIZED);
@@ -126,7 +126,7 @@ export class PatientAuthController {
                 }
 
                 await supabase
-                    .from('opdesk_sakhi_clinic_patients')
+                    .from('sakhi_clinic_patients')
                     .update(updateData)
                     .eq('id', patient.id);
 
@@ -135,7 +135,7 @@ export class PatientAuthController {
 
             // PIN is valid - Reset failed attempts
             await supabase
-                .from('opdesk_sakhi_clinic_patients')
+                .from('sakhi_clinic_patients')
                 .update({ failed_attempts: 0, locked_until: null })
                 .eq('id', patient.id);
 

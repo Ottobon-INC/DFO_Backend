@@ -50,7 +50,7 @@ export class JanmasethuChannelService {
     private async ensureThreadExists(userId: string, channel: string): Promise<string> {
         // Check if thread exists for the user in janmasethu domain
         const { data, error } = await (this.repository as any).supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .select('id')
             .eq('user_id', userId)
             .eq('domain', JANMASETHU_DOMAIN)

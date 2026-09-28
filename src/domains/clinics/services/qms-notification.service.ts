@@ -46,7 +46,7 @@ export class QmsNotificationService {
         const supabase = this.supabaseService.getClient();
 
         const { data: config } = await supabase
-            .from('opdesk_tenant_configs')
+            .from('tenant_configs')
             .select('notification_templates, quiet_hours, almost_turn_threshold')
             .eq('tenant_id', payload.tenantId)
             .single();
@@ -61,7 +61,7 @@ export class QmsNotificationService {
 
                 // 1. Deduplication Rule
                 const { data: existing } = await supabase
-                    .from('opdesk_qms_notifications_outbox')
+                    .from('qms_notifications_outbox')
                     .select('id')
                     .eq('appointment_id', pt.appointment_id)
                     .eq('notification_type', 'ALMOST_TURN')
@@ -70,7 +70,7 @@ export class QmsNotificationService {
                 if (!existing) {
                     // Fetch patient mobile
                     const { data: ptData } = await supabase
-                        .from('opdesk_sakhi_clinic_appointments')
+                        .from('sakhi_clinic_appointments')
                         .select('patient:sakhi_clinic_patients(mobile, name)')
                         .eq('id', pt.appointment_id)
                         .single();
@@ -80,7 +80,7 @@ export class QmsNotificationService {
                         const message = template.replace('{{token}}', pt.token_number);
 
                         // 2. Insert into Outbox (Queueing)
-                        await supabase.from('opdesk_qms_notifications_outbox').insert({
+                        await supabase.from('qms_notifications_outbox').insert({
                             tenant_id: payload.tenantId,
                             appointment_id: pt.appointment_id,
                             recipient_mobile: Array.isArray(ptData.patient) ? ptData.patient[0]?.mobile : (ptData.patient as any)?.mobile,

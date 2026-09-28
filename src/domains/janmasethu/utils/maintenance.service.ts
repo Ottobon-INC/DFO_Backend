@@ -193,7 +193,7 @@ export class JanmasethuMaintenanceService {
         try {
             // Check if table exists by querying it
             const { error } = await this.supabase
-                .from('opdesk_dfo_support_tickets')
+                .from('dfo_support_tickets')
                 .select('id')
                 .limit(1);
 
