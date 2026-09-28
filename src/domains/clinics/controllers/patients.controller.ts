@@ -39,7 +39,7 @@ export class PatientsController {
         const from = (pageNum - 1) * limitNum;
         const to = from + limitNum - 1;
         try {
-            let query = supabase.from('sakhi_clinic_patients').select('*', { count: 'exact' });
+            let query = supabase.from('opdesk_sakhi_clinic_patients').select('*', { count: 'exact' });
             if (clinic_id) {
                 query = query.eq('clinic_id', clinic_id);
             }
@@ -91,7 +91,7 @@ export class PatientsController {
             // Only block exact duplicates where both name AND mobile match within the same clinic.
             // Using .limit(1) instead of .maybeSingle() to safely handle pre-existing duplicates in the DB.
             const { data: exactDuplicates, error: existingError } = await supabase
-                .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', cleanMobile).ilike('name', name).limit(1);
+                .from('opdesk_sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', cleanMobile).ilike('name', name).limit(1);
             if (existingError) throw existingError;
             if (exactDuplicates && exactDuplicates.length > 0) {
                 throw new HttpException({ success: false, error: 'A patient with this exact name and mobile number already exists' }, HttpStatus.CONFLICT);
@@ -117,7 +117,7 @@ export class PatientsController {
                 pin_hash // Save the newly generated PIN
             });
 
-            const { data, error } = await supabase.from('sakhi_clinic_patients').insert(payload).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_patients').insert(payload).select().single();
             if (error) throw error;
 
             const actor_id = TenantContext.getUserId();
@@ -147,12 +147,12 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinic_patients').select('*').eq('id', id).eq('clinic_id', clinic_id).single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_patients').select('*').eq('id', id).eq('clinic_id', clinic_id).single();
             if (error?.code === 'PGRST116' || !data) throw new HttpException({ success: false, error: 'Patient not found' }, HttpStatus.NOT_FOUND);
             if (error) throw error;
 
             const { data: abhaData, error: abhaError } = await supabase
-                .from('patient_abha')
+                .from('opdesk_patient_abha')
                 .select('abha_number, abha_address, verification_status, is_active, verified_at')
                 .eq('patient_id', id)
                 .eq('is_active', true)
@@ -177,17 +177,17 @@ export class PatientsController {
         try {
             // Fire all 4 requests in parallel to minimize latency
             const [vitalsRes, allergiesRes, historyRes, treatmentsRes] = await Promise.all([
-                supabase.from('sakhi_clinic_patient_vitals')
+                supabase.from('opdesk_sakhi_clinic_patient_vitals')
                     .select('vital_type, vital_value, recorded_at')
                     .eq('patient_id', id)
                     .order('recorded_at', { ascending: false }).limit(100),
-                supabase.from('sakhi_clinic_allergies')
+                supabase.from('opdesk_sakhi_clinic_allergies')
                     .select('allergy_name, severity')
                     .eq('patient_id', id).eq('clinic_id', clinic_id),
-                supabase.from('sakhi_clinic_medical_history')
+                supabase.from('opdesk_sakhi_clinic_medical_history')
                     .select('condition_name, status')
                     .eq('patient_id', id).eq('clinic_id', clinic_id),
-                supabase.from('sakhi_clinic_treatments')
+                supabase.from('opdesk_sakhi_clinic_treatments')
                     .select('treatment_name, status')
                     .eq('patient_id', id).eq('clinic_id', clinic_id)
                     .in('status', ['PLANNED', 'IN_PROGRESS'])
@@ -245,7 +245,7 @@ export class PatientsController {
             }
 
             const { data, error } = await supabase
-                .from('sakhi_clinic_patient_vitals')
+                .from('opdesk_sakhi_clinic_patient_vitals')
                 .insert(validPayloads)
                 .select();
                 
@@ -276,7 +276,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { error } = await supabase.from('sakhi_clinic_patient_vitals')
+            const { error } = await supabase.from('opdesk_sakhi_clinic_patient_vitals')
                 .delete()
                 .eq('id', vitalId)
                 .eq('patient_id', id); // Vitals table does not have clinic_id, isolated via patient_id which belongs to clinic
@@ -320,7 +320,7 @@ export class PatientsController {
                 reaction: body.reaction || null
             };
 
-            const { data, error } = await supabase.from('sakhi_clinic_allergies').insert(payload).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_allergies').insert(payload).select().single();
             if (error) throw error;
 
             // Audit Log
@@ -356,7 +356,7 @@ export class PatientsController {
                 return { success: true, message: 'No updates provided' };
             }
 
-            const { data, error } = await supabase.from('sakhi_clinic_allergies')
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_allergies')
                 .update(updates)
                 .eq('id', allergyId)
                 .eq('patient_id', id)
@@ -389,7 +389,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { error } = await supabase.from('sakhi_clinic_allergies')
+            const { error } = await supabase.from('opdesk_sakhi_clinic_allergies')
                 .delete()
                 .eq('id', allergyId)
                 .eq('patient_id', id)
@@ -426,7 +426,7 @@ export class PatientsController {
             }
 
             // Check for duplicate active conditions
-            const { data: existingConditions } = await supabase.from('sakhi_clinic_medical_history')
+            const { data: existingConditions } = await supabase.from('opdesk_sakhi_clinic_medical_history')
                 .select('id')
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id)
@@ -446,7 +446,7 @@ export class PatientsController {
                 diagnosis_date: body.diagnosis_date || null
             };
 
-            const { data, error } = await supabase.from('sakhi_clinic_medical_history').insert(payload).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_medical_history').insert(payload).select().single();
             if (error) throw error;
 
             // Audit Log
@@ -474,7 +474,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { error } = await supabase.from('sakhi_clinic_medical_history')
+            const { error } = await supabase.from('opdesk_sakhi_clinic_medical_history')
                 .delete()
                 .eq('id', historyId)
                 .eq('patient_id', id)
@@ -506,7 +506,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinic_medical_history')
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_medical_history')
                 .update({ status: 'RESOLVED' })
                 .eq('id', historyId)
                 .eq('patient_id', id)
@@ -548,7 +548,7 @@ export class PatientsController {
             const from = (pageNum - 1) * limitNum;
             const to = from + limitNum - 1;
 
-            let query = supabase.from('sakhi_clinic_patient_timeline_view').select('*', { count: 'exact' })
+            let query = supabase.from('opdesk_sakhi_clinic_patient_timeline_view').select('*', { count: 'exact' })
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id);
 
@@ -588,7 +588,7 @@ export class PatientsController {
             if (mobile && updatedName) {
                 const normalizedName = String(updatedName).trim().replace(/\s+/g, ' ');
                 const { data: dupeCheck } = await supabase
-                    .from('sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', mobile).ilike('name', normalizedName).neq('id', id).limit(1);
+                    .from('opdesk_sakhi_clinic_patients').select('id').eq('clinic_id', clinic_id).eq('mobile', mobile).ilike('name', normalizedName).neq('id', id).limit(1);
                 if (dupeCheck && dupeCheck.length > 0) {
                     throw new HttpException({ success: false, error: 'Another patient with this exact name and mobile number already exists' }, HttpStatus.CONFLICT);
                 }
@@ -613,7 +613,7 @@ export class PatientsController {
             delete (sanitized as any).created_at;
             delete (sanitized as any).clinic_id; // don't allow changing clinic_id
 
-            const { data, error } = await supabase.from('sakhi_clinic_patients').update(sanitized).eq('id', id).eq('clinic_id', clinic_id).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_patients').update(sanitized).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Patient not found' }, HttpStatus.NOT_FOUND);
             if (error) throw error;
 
@@ -642,7 +642,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinic_appointments').select('*').eq('patient_id', id).eq('clinic_id', clinic_id).order('appointment_date', { ascending: false });
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_appointments').select('*').eq('patient_id', id).eq('clinic_id', clinic_id).order('appointment_date', { ascending: false });
             if (error) throw error;
             return { success: true, data };
         } catch (error: any) {
@@ -659,7 +659,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinic_patient_notes').select('id, patient_id, author_id, note, created_at').eq('patient_id', id).eq('clinic_id', clinic_id).order('created_at', { ascending: false });
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_patient_notes').select('id, patient_id, author_id, note, created_at').eq('patient_id', id).eq('clinic_id', clinic_id).order('created_at', { ascending: false });
             if (error) throw error;
             return { success: true, data: data ?? [] };
         } catch (error: any) {
@@ -679,7 +679,7 @@ export class PatientsController {
         try {
             if (!body?.note) throw new HttpException({ success: false, error: 'note is required' }, HttpStatus.BAD_REQUEST);
             const payload = this.utils.sanitizePayload({ clinic_id, patient_id: id, author_id: this.utils.isUuid(body?.doctor_id) ? body.doctor_id : null, note: body.note });
-            const { data, error } = await supabase.from('sakhi_clinic_patient_notes').insert(payload).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_patient_notes').insert(payload).select().single();
             if (error) throw error;
 
             const actor_id = TenantContext.getUserId();
@@ -702,7 +702,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinical_notes').select('*').eq('patient_id', id).eq('clinic_id', clinic_id).order('created_at', { ascending: false });
+            const { data, error } = await supabase.from('opdesk_sakhi_clinical_notes').select('*').eq('patient_id', id).eq('clinic_id', clinic_id).order('created_at', { ascending: false });
             if (error) throw error;
             return { success: true, data };
         } catch (error: any) {
@@ -721,7 +721,7 @@ export class PatientsController {
         try {
             if (!body?.doctor_id) throw new HttpException({ success: false, error: 'doctor_id is required' }, HttpStatus.BAD_REQUEST);
             const payload = this.utils.sanitizePayload({ clinic_id, patient_id: id, doctor_id: body.doctor_id, appointment_id: body.appointment_id, subjective: body.subjective, objective: body.objective, assessment: body.assessment, plan: body.plan });
-            const { data, error } = await supabase.from('sakhi_clinical_notes').insert(payload).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinical_notes').insert(payload).select().single();
             if (error) throw error;
 
             const actor_id = TenantContext.getUserId();
@@ -748,7 +748,7 @@ export class PatientsController {
             const actor_id = TenantContext.getUserId();
 
             // Fetch original note for compliance checks
-            const { data: originalNote, error: fetchError } = await supabase.from('sakhi_clinical_notes')
+            const { data: originalNote, error: fetchError } = await supabase.from('opdesk_sakhi_clinical_notes')
                 .select('doctor_id, created_at')
                 .eq('id', noteId)
                 .eq('patient_id', id)
@@ -772,7 +772,7 @@ export class PatientsController {
 
             const payload = this.utils.sanitizePayload({ subjective: body.subjective, objective: body.objective, assessment: body.assessment, plan: body.plan, updated_at: new Date().toISOString() });
 
-            const { data, error } = await supabase.from('sakhi_clinical_notes')
+            const { data, error } = await supabase.from('opdesk_sakhi_clinical_notes')
                 .update(payload)
                 .eq('id', noteId)
                 .eq('patient_id', id)
@@ -803,7 +803,7 @@ export class PatientsController {
             const actor_id = TenantContext.getUserId();
 
             // Fetch original note for auth check
-            const { data: originalNote, error: fetchError } = await supabase.from('sakhi_clinical_notes')
+            const { data: originalNote, error: fetchError } = await supabase.from('opdesk_sakhi_clinical_notes')
                 .select('doctor_id')
                 .eq('id', noteId)
                 .eq('patient_id', id)
@@ -820,7 +820,7 @@ export class PatientsController {
             }
 
             // Soft delete
-            const { error } = await supabase.from('sakhi_clinical_notes')
+            const { error } = await supabase.from('opdesk_sakhi_clinical_notes')
                 .update({ status: 'DELETED', updated_at: new Date().toISOString() })
                 .eq('id', noteId)
                 .eq('patient_id', id)
@@ -847,7 +847,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinic_treatments')
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_treatments')
                 .select('*')
                 .eq('patient_id', id)
                 .eq('clinic_id', clinic_id)
@@ -872,7 +872,7 @@ export class PatientsController {
 
             // Parent Validation
             if (this.utils.isUuid(body.parent_treatment_id)) {
-                const { data: parent, error: parentError } = await supabase.from('sakhi_clinic_treatments')
+                const { data: parent, error: parentError } = await supabase.from('opdesk_sakhi_clinic_treatments')
                     .select('id')
                     .eq('id', body.parent_treatment_id)
                     .eq('patient_id', id)
@@ -895,7 +895,7 @@ export class PatientsController {
                 parent_treatment_id: this.utils.isUuid(body.parent_treatment_id) ? body.parent_treatment_id : null
             });
 
-            const { data, error } = await supabase.from('sakhi_clinic_treatments').insert(payload).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_treatments').insert(payload).select().single();
             if (error) throw error;
 
             const actor_id = TenantContext.getUserId();
@@ -920,7 +920,7 @@ export class PatientsController {
         const supabase = this.supabaseService.getClient();
         try {
             // State Machine Validation
-            const { data: existing, error: existingError } = await supabase.from('sakhi_clinic_treatments')
+            const { data: existing, error: existingError } = await supabase.from('opdesk_sakhi_clinic_treatments')
                 .select('status')
                 .eq('id', treatmentId)
                 .eq('patient_id', id)
@@ -946,7 +946,7 @@ export class PatientsController {
                 updated_at: new Date().toISOString()
             });
 
-            const { data, error } = await supabase.from('sakhi_clinic_treatments')
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_treatments')
                 .update(payload)
                 .eq('id', treatmentId)
                 .eq('patient_id', id)
@@ -976,7 +976,7 @@ export class PatientsController {
         const supabase = this.supabaseService.getClient();
         try {
             // Soft delete
-            const { error } = await supabase.from('sakhi_clinic_treatments')
+            const { error } = await supabase.from('opdesk_sakhi_clinic_treatments')
                 .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
                 .eq('id', treatmentId)
                 .eq('patient_id', id)
@@ -1003,7 +1003,7 @@ export class PatientsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            const { data, error } = await supabase.from('sakhi_clinic_documents').select('*').eq('patient_id', id).eq('clinic_id', clinic_id).order('created_at', { ascending: false });
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_documents').select('*').eq('patient_id', id).eq('clinic_id', clinic_id).order('created_at', { ascending: false });
             if (error) throw error;
             return { success: true, data: data ?? [] };
         } catch (error: any) {
@@ -1040,7 +1040,7 @@ export class PatientsController {
             }
             if (!fileUrl) throw new HttpException({ success: false, error: 'Document url or base64 content is required' }, HttpStatus.BAD_REQUEST);
 
-            const { data, error } = await supabase.from('sakhi_clinic_documents')
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_documents')
                 .insert({ clinic_id, patient_id: id, name, document_type, url: fileUrl, uploaded_at: new Date().toISOString() })
                 .select().single();
             if (error) throw error;
@@ -1073,7 +1073,7 @@ export class PatientsController {
             const pin_hash = await bcrypt.hash(newPin, 10);
 
             // Update patient record
-            const { data, error } = await supabase.from('sakhi_clinic_patients')
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_patients')
                 .update({
                     pin_hash,
                     failed_attempts: 0,

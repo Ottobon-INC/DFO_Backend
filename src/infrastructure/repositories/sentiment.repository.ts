@@ -8,7 +8,7 @@ export class SentimentRepository {
 
     async create(data: Omit<SentimentEvaluation, 'id' | 'created_at'>): Promise<SentimentEvaluation> {
         const { data: created, error } = await this.supabase
-            .from('sentiment_evaluations')
+            .from('opdesk_sentiment_evaluations')
             .insert([{
                 thread_id: data.thread_id,
                 message_id: data.message_id,

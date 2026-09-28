@@ -38,7 +38,7 @@ export class AuthController {
             const cleanEmail = email.trim().toLowerCase();
             const supabase = this.supabaseService.getClient();
             const { data: user, error } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .select('*')
                 .ilike('email', cleanEmail)
                 .single();
@@ -59,7 +59,7 @@ export class AuthController {
             // Verify clinic organization status for non-superadmin users
             if (user.clinic_id && !user.is_super_admin) {
                 const { data: clinic } = await supabase
-                    .from('clinics')
+                    .from('opdesk_clinics')
                     .select('is_active, name, specialty')
                     .eq('id', user.clinic_id)
                     .single();
@@ -111,7 +111,7 @@ export class AuthController {
                     const lockUntilDate = new Date(new Date().getTime() + 15 * 60000);
                     updateData.locked_until = lockUntilDate.toISOString();
                 }
-                await supabase.from('sakhi_clinic_users').update(updateData).eq('id', user.id);
+                await supabase.from('opdesk_sakhi_clinic_users').update(updateData).eq('id', user.id);
 
                 try {
                     await this.eventsQueue.add(DFO_EVENTS.AUTH_LOGIN_FAILED, new AuthEvent(
@@ -125,7 +125,7 @@ export class AuthController {
 
             // Successful login -> Reset lockout
             const updateSuccessData: any = { failed_attempts: 0, locked_until: null };
-            await supabase.from('sakhi_clinic_users').update(updateSuccessData).eq('id', user.id);
+            await supabase.from('opdesk_sakhi_clinic_users').update(updateSuccessData).eq('id', user.id);
 
             // 5. Role Portal Gate Validation
             if (body.role) {
@@ -242,7 +242,7 @@ export class AuthController {
         try {
             const supabase = this.supabaseService.getClient();
             const { data: user, error } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .select('*')
                 .eq('id', decoded.sub)
                 .single();
@@ -252,7 +252,7 @@ export class AuthController {
             let clinicSpecialty = 'General';
             if (user.clinic_id && !user.is_super_admin) {
                 const { data: clinic } = await supabase
-                    .from('clinics')
+                    .from('opdesk_clinics')
                     .select('specialty')
                     .eq('id', user.clinic_id)
                     .single();
@@ -326,7 +326,7 @@ export class AuthController {
 
         const supabase = this.supabaseService.getClient();
         const { data, error } = await supabase
-            .from('sakhi_clinic_users')
+            .from('opdesk_sakhi_clinic_users')
             .update(updatePayload)
             .eq('id', decoded.sub)
             .select('id, name, email, role, clinic_id')
@@ -367,7 +367,7 @@ export class AuthController {
         const supabase = this.supabaseService.getClient();
 
         const { data: user, error } = await supabase
-            .from('sakhi_clinic_users')
+            .from('opdesk_sakhi_clinic_users')
             .select('*')
             .eq('id', decoded.sub)
             .single();
@@ -392,7 +392,7 @@ export class AuthController {
         let new_password_hash = await bcrypt.hash(newPassword, 10);
 
         const { error: updateError } = await supabase
-            .from('sakhi_clinic_users')
+            .from('opdesk_sakhi_clinic_users')
             .update({ password_hash: new_password_hash })
             .eq('id', decoded.sub);
 
@@ -416,7 +416,7 @@ export class AuthController {
             const cleanEmail = email.trim().toLowerCase();
             const supabase = this.supabaseService.getClient();
             const { data: user, error } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .select('id, email, phone_number, hospital_id, is_active, first_name, last_name, clinic_id')
                 .ilike('email', cleanEmail)
                 .single();
@@ -435,7 +435,7 @@ export class AuthController {
             // Verify clinic status if clinic_id is present
             if (user.clinic_id) {
                 const { data: clinic } = await supabase
-                    .from('clinics')
+                    .from('opdesk_clinics')
                     .select('is_active')
                     .eq('id', user.clinic_id)
                     .single();
@@ -529,7 +529,7 @@ export class AuthController {
             const newPasswordHash = await bcrypt.hash(new_password, 10);
 
             const { error: updateError } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .update({
                     password_hash: newPasswordHash,
                     failed_attempts: 0,
@@ -590,7 +590,7 @@ export class AuthController {
             };
 
             const { data, error } = await supabase
-                .from('sakhi_clinic_demo_requests')
+                .from('opdesk_sakhi_clinic_demo_requests')
                 .insert(demoPayload)
                 .select()
                 .single();

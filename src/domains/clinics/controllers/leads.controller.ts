@@ -41,7 +41,7 @@ export class LeadsController {
         const from = (pageNum - 1) * limitNum;
         const to = from + limitNum - 1;
         try {
-            let query = supabase.from('sakhi_clinic_leads')
+            let query = supabase.from('opdesk_sakhi_clinic_leads')
                 .select('*', { count: 'exact' })
                 .eq('clinic_id', clinic_id)
                 .order('date_added', { ascending: false })
@@ -112,7 +112,7 @@ export class LeadsController {
                 alternate_phone, referral_required: tv(body.referral_required),
                 clinic_id,
             });
-            const { data, error } = await supabase.from('sakhi_clinic_leads').insert(payload).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_leads').insert(payload).select().single();
             if (error) throw error;
             
             const actor_id = TenantContext.getUserId();
@@ -141,7 +141,7 @@ export class LeadsController {
 
         const supabase = this.supabaseService.getClient();
         try {
-            let query = supabase.from('sakhi_clinic_leads')
+            let query = supabase.from('opdesk_sakhi_clinic_leads')
                 .select('*')
                 .eq('clinic_id', clinic_id)
                 .order('date_added', { ascending: false });
@@ -188,7 +188,7 @@ export class LeadsController {
             let existingPhones = new Set<string>();
             if (phonesForCheck.length > 0) {
                 const { data: existingData, error: checkError } = await supabase
-                    .from('sakhi_clinic_leads')
+                    .from('opdesk_sakhi_clinic_leads')
                     .select('phone')
                     .eq('clinic_id', clinic_id)
                     .in('phone', phonesForCheck);
@@ -215,7 +215,7 @@ export class LeadsController {
             }
             let successCount = 0;
             if (validLeadsToInsert.length > 0) {
-                const { error: insertError } = await supabase.from('sakhi_clinic_leads').insert(validLeadsToInsert);
+                const { error: insertError } = await supabase.from('opdesk_sakhi_clinic_leads').insert(validLeadsToInsert);
                 if (insertError) {
                     errors.push(`Database insert failed: ${insertError.message}`);
                 } else {
@@ -244,7 +244,7 @@ export class LeadsController {
 
         const supabase = this.supabaseService.getClient();
         const { data, error } = await supabase
-            .from('sakhi_clinic_leads')
+            .from('opdesk_sakhi_clinic_leads')
             .select('*')
             .eq('id', id)
             .eq('clinic_id', clinic_id)
@@ -282,7 +282,7 @@ export class LeadsController {
             });
             if (!Object.keys(updates).length) throw new HttpException({ success: false, error: 'No fields provided to update' }, HttpStatus.BAD_REQUEST);
             const { data, error } = await supabase
-                .from('sakhi_clinic_leads')
+                .from('opdesk_sakhi_clinic_leads')
                 .update(updates)
                 .eq('id', id)
                 .eq('clinic_id', clinic_id)
@@ -315,7 +315,7 @@ export class LeadsController {
         const supabase = this.supabaseService.getClient();
         try {
             const updates = { status: 'Follow Up' };
-            const { data, error } = await supabase.from('sakhi_clinic_leads').update(updates).eq('id', id).eq('clinic_id', clinic_id).select().single();
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_leads').update(updates).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') throw new HttpException({ success: false, error: 'Lead not found' }, HttpStatus.NOT_FOUND);
             if (error) throw error;
             
@@ -345,7 +345,7 @@ export class LeadsController {
             const tv = this.utils.toValue.bind(this.utils);
             // 1. Fetch Lead
             const { data: lead, error: leadError } = await supabase
-                .from('sakhi_clinic_leads')
+                .from('opdesk_sakhi_clinic_leads')
                 .select('*')
                 .eq('id', id)
                 .eq('clinic_id', clinic_id)

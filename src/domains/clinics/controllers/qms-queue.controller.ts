@@ -61,7 +61,7 @@ export class QMSQueueController {
         const supabase = this.supabaseService.getClient();
         
         const { data, error } = await supabase
-            .from('sakhi_clinic_appointments')
+            .from('opdesk_sakhi_clinic_appointments')
             .select('queue_status')
             .eq('clinic_id', tenantId)
             .eq('doctor_id', doctorId)
@@ -94,8 +94,8 @@ export class QMSQueueController {
         
         // Search by token number or patient name (join)
         const { data, error } = await supabase
-            .from('sakhi_clinic_appointments')
-            .select('*, patient:sakhi_clinic_patients!inner(name, mobile)')
+            .from('opdesk_sakhi_clinic_appointments')
+            .select('*, patient:opdesk_sakhi_clinic_patients!inner(name, mobile)')
             .eq('clinic_id', tenantId)
             .eq('doctor_id', doctorId)
             .gte('appointment_date', date + 'T00:00:00Z')
@@ -125,7 +125,7 @@ export class QMSQueueController {
         
         if (!patientId) {
             const { data: existingPt } = await supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id, assigned_doctor_id')
                 .eq('clinic_id', tenantId)
                 .eq('mobile', mobile)
@@ -135,11 +135,11 @@ export class QMSQueueController {
             if (existingPt) {
                 patientId = existingPt.id;
                 if (!existingPt.assigned_doctor_id && doctor_id) {
-                    await supabase.from('sakhi_clinic_patients').update({ assigned_doctor_id: doctor_id }).eq('id', patientId);
+                    await supabase.from('opdesk_sakhi_clinic_patients').update({ assigned_doctor_id: doctor_id }).eq('id', patientId);
                 }
             } else {
                 const { data: newPt, error: ptErr } = await supabase
-                    .from('sakhi_clinic_patients')
+                    .from('opdesk_sakhi_clinic_patients')
                     .insert({ clinic_id: tenantId, mobile, name, source: 'WALK_IN', assigned_doctor_id: doctor_id || null })
                     .select('id')
                     .single();
@@ -148,7 +148,7 @@ export class QMSQueueController {
                     if (ptErr.code === '23505') { // Unique violation
                         // Race condition! Another bot/user just created this patient. Reuse it.
                         const { data: racePt } = await supabase
-                            .from('sakhi_clinic_patients')
+                            .from('opdesk_sakhi_clinic_patients')
                             .select('id')
                             .eq('clinic_id', tenantId)
                             .eq('mobile', mobile)
@@ -171,7 +171,7 @@ export class QMSQueueController {
 
         // 3. Appointment Creation
         const { data: appt, error: apptErr } = await supabase
-            .from('sakhi_clinic_appointments')
+            .from('opdesk_sakhi_clinic_appointments')
             .insert({
                 clinic_id: tenantId,
                 patient_id: patientId,
@@ -207,7 +207,7 @@ export class QMSQueueController {
             if (isNewPatient && patientId) {
                 console.warn(`Walk-in failed. Rolling back patient creation for ID: ${patientId}`);
                 await supabase
-                    .from('sakhi_clinic_patients')
+                    .from('opdesk_sakhi_clinic_patients')
                     .delete()
                     .eq('id', patientId);
             }
@@ -222,7 +222,7 @@ export class QMSQueueController {
         const supabase = this.supabaseService.getClient();
         
         const { data, error } = await supabase
-            .from('qms_notifications_outbox')
+            .from('opdesk_qms_notifications_outbox')
             .select('id, notification_type, channel, priority, status, attempts, last_error, created_at, next_attempt_at, expires_at')
             .eq('tenant_id', tenantId)
             .eq('appointment_id', appointmentId)

@@ -6,7 +6,7 @@ import { TenantContext } from '../../../infrastructure/context/tenant.context';
 @Injectable()
 export class DocumentRepository {
     private readonly logger = new Logger(DocumentRepository.name);
-    private readonly TABLE = 'sakhi_clinic_documents';
+    private readonly TABLE = 'opdesk_sakhi_clinic_documents';
 
     // In-memory registry for transient document metadata mapping: documentId -> metadata
     private documentMetadata = new Map<string, {

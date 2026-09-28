@@ -12,7 +12,7 @@ export class EscalationService {
 
     async getDoctorEscalations(doctorId: string, clinicId?: string) {
         let query = this.supabase
-            .from('sakhi_escalations')
+            .from('opdesk_sakhi_escalations')
             .select('*')
             .eq('status', 'PENDING');
 
@@ -36,7 +36,7 @@ export class EscalationService {
 
     async updateEscalationStatus(id: string, status: string) {
         const { data, error } = await this.supabase
-            .from('sakhi_escalations')
+            .from('opdesk_sakhi_escalations')
             .update({ status, updated_at: new Date().toISOString() })
             .eq('id', id)
             .select();
@@ -52,7 +52,7 @@ export class EscalationService {
     async getEscalationMessages(id: string) {
         // 1. Get the escalation to find the user_id
         const { data: escalation, error: escalationError } = await this.supabase
-            .from('sakhi_escalations')
+            .from('opdesk_sakhi_escalations')
             .select('user_id, patient_id')
             .eq('id', id)
             .single();
@@ -69,7 +69,7 @@ export class EscalationService {
 
         // 2. Fetch the last 50 encrypted messages for this user
         const { data: messages, error: messagesError } = await this.supabase
-            .from('sakhi_encrypted_chats')
+            .from('opdesk_sakhi_encrypted_chats')
             .select('*')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })

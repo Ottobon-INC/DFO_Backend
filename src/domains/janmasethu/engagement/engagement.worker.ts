@@ -28,7 +28,7 @@ export class EngagementWorker extends WorkerHost {
         try {
             // 1. Fetch Patient Profile & Preferences
             const { data: patient, error } = await this.orgSupabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('*')
                 .eq('id', patient_id)
                 .maybeSingle();
@@ -101,7 +101,7 @@ export class ReminderWorker extends WorkerHost {
         if (!reminder || !reminder.is_active) return;
 
         const { data: patient } = await this.orgSupabase
-            .from('sakhi_clinic_patients')
+            .from('opdesk_sakhi_clinic_patients')
             .select('*')
             .eq('id', patient_id)
             .maybeSingle();

@@ -20,7 +20,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         // 1. Initialize lastProcessedId with the highest existing message ID
         try {
             const { data, error } = await this.orgSupabase
-                .from('sakhi_encrypted_chats')
+                .from('opdesk_sakhi_encrypted_chats')
                 .select('id')
                 .order('id', { ascending: false })
                 .limit(1)
@@ -42,7 +42,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             .on('postgres_changes', { 
                 event: 'INSERT', 
                 schema: 'public', 
-                table: 'sakhi_encrypted_chats' 
+                table: 'opdesk_sakhi_encrypted_chats' 
             }, async (payload) => {
                 try {
                     const msg = payload.new;
@@ -80,7 +80,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     async pollNewMessages() {
         try {
             const { data, error } = await this.orgSupabase
-                .from('sakhi_encrypted_chats')
+                .from('opdesk_sakhi_encrypted_chats')
                 .select('*')
                 .gt('id', this.lastProcessedId)
                 .order('id', { ascending: true });
@@ -130,7 +130,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             if (tokens.size > 0) {
                 try {
                     const { data: vaultRows } = await this.orgSupabase
-                        .from('sakhi_pii_vault')
+                        .from('opdesk_sakhi_pii_vault')
                         .select('token_key, encrypted_value')
                         .in('token_key', Array.from(tokens));
 
@@ -146,7 +146,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             if (gmedTokens.size > 0) {
                 try {
                     const { data: dictRows } = await this.orgSupabase
-                        .from('sakhi_medical_dictionary')
+                        .from('opdesk_sakhi_medical_dictionary')
                         .select('token_key, encrypted_term')
                         .in('token_key', Array.from(gmedTokens));
 
@@ -171,7 +171,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
         // Check if thread exists
         let { data: thread, error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('*')
             .eq('user_id', msg.user_id)
             .maybeSingle();
@@ -188,14 +188,14 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             // Auto-create patient record if it doesn't exist
             try {
                 const { data: existingUser } = await this.orgSupabase
-                    .from('sakhi_clinic_users')
+                    .from('opdesk_sakhi_clinic_users')
                     .select('id')
                     .eq('id', msg.user_id)
                     .maybeSingle();
                 
                 if (!existingUser) {
                     this.logger.log(`Auto-creating patient record in sakhi_clinic_users for ${msg.user_id}`);
-                    await this.orgSupabase.from('sakhi_clinic_users').insert({
+                    await this.orgSupabase.from('opdesk_sakhi_clinic_users').insert({
                         id: msg.user_id,
                         name: `Patient ${msg.user_id.substring(0, 5)}`,
                         role: 'PATIENT',
@@ -207,7 +207,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             }
 
             const { data: newThread, error: createError } = await this.supabase
-                .from('conversation_threads')
+                .from('opdesk_conversation_threads')
                 .insert([{
                     domain: 'janmasethu',
                     user_id: msg.user_id,
@@ -230,7 +230,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         } else {
             // Update last message preview & last_message_at
             const { error: updateError } = await this.supabase
-                .from('conversation_threads')
+                .from('opdesk_conversation_threads')
                 .update({
                     last_message_preview: decryptedText.substring(0, 100),
                     last_message_at: new Date(),
@@ -298,7 +298,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             // Send automated "We will assist you ASAP" response to Sakhi chatbot
             const encryptedReply = this.chatDecrypter.encrypt(msg.user_id, "We will assist you ASAP");
             const { error: replyError } = await this.orgSupabase
-                .from('sakhi_encrypted_chats')
+                .from('opdesk_sakhi_encrypted_chats')
                 .insert([{
                     user_id: msg.user_id,
                     message_content: encryptedReply,
@@ -317,7 +317,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
     async findThreads(user?: { id: string; role: string }) {
         let query = this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('*');
 
         if (user) {
@@ -359,7 +359,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (assignedUserIds.length > 0) {
             try {
                 const { data: userNames } = await this.orgSupabase
-                    .from('sakhi_clinic_users')
+                    .from('opdesk_sakhi_clinic_users')
                     .select('id, name')
                     .in('id', assignedUserIds);
                 userNameMap = new Map((userNames || []).map((u: any) => [u.id, u.name]));
@@ -371,7 +371,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         // Enrich with patient name
         const enriched = await Promise.all(visibleThreads.map(async (t) => {
             const { data: patient } = await this.orgSupabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id, name')
                 .eq('mobile', t.user_id)
                 .maybeSingle();
@@ -390,7 +390,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
     async findThreadById(id: string) {
         const { data, error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('*')
             .eq('id', id)
             .maybeSingle();
@@ -398,7 +398,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (!data) return null;
 
         const { data: patient } = await this.orgSupabase
-            .from('sakhi_clinic_patients')
+            .from('opdesk_sakhi_clinic_patients')
             .select('id, name')
             .eq('mobile', data.user_id)
             .maybeSingle();
@@ -408,7 +408,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (data.assigned_user_id) {
             try {
                 const { data: clinician } = await this.orgSupabase
-                    .from('sakhi_clinic_users')
+                    .from('opdesk_sakhi_clinic_users')
                     .select('name')
                     .eq('id', data.assigned_user_id)
                     .maybeSingle();
@@ -431,7 +431,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     async findMessagesByThreadId(threadId: string) {
         // Fetch the user_id of the thread
         const { data: thread } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('user_id')
             .eq('id', threadId)
             .maybeSingle();
@@ -441,7 +441,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         }
 
         let query = this.orgSupabase
-            .from('sakhi_encrypted_chats')
+            .from('opdesk_sakhi_encrypted_chats')
             .select('*');
 
         const rawUserId = thread.user_id;
@@ -455,7 +455,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
             let resolvedUuid: string | null = null;
             for (const phoneVariant of phoneVariants) {
                 const { data: userRow } = await this.orgSupabase
-                    .from('sakhi_users')
+                    .from('opdesk_sakhi_users')
                     .select('user_id')
                     .eq('phone_number', phoneVariant)
                     .maybeSingle();
@@ -503,7 +503,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (tokens.size > 0) {
             try {
                 const { data: vaultRows } = await this.orgSupabase
-                    .from('sakhi_pii_vault')
+                    .from('opdesk_sakhi_pii_vault')
                     .select('token_key, encrypted_value')
                     .in('token_key', Array.from(tokens));
 
@@ -519,7 +519,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (gmedTokens.size > 0) {
             try {
                 const { data: dictRows } = await this.orgSupabase
-                    .from('sakhi_medical_dictionary')
+                    .from('opdesk_sakhi_medical_dictionary')
                     .select('token_key, encrypted_term')
                     .in('token_key', Array.from(gmedTokens));
 
@@ -576,7 +576,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     async assignThread(id: string, assignTo: string, role: string) {
         const roleUpper = role.toUpperCase();
         const { error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({
                 assigned_to: assignTo,
                 assigned_user_id: assignTo,
@@ -591,12 +591,12 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
         // Fetch clinician's name dynamically from DB
         const { data: user } = await this.orgSupabase
-            .from('sakhi_clinic_users')
+            .from('opdesk_sakhi_clinic_users')
             .select('name')
             .eq('id', assignTo)
             .maybeSingle();
 
-        const clinicianName = user?.name || (roleUpper === 'DOCTOR' ? `Doctor (${assignTo})` : `Nurse (${assignTo})`);
+        const clinicianName = user?.name || (roleUpper === 'DOCTOR' ? `Doctor:opdesk_Doctor (${assignTo})` : `Nurse (${assignTo})`);
 
         await this.replyToThread(id, 'SYSTEM', 'SYSTEM', `Thread assigned to ${clinicianName}.`);
     }
@@ -605,7 +605,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (!phone) return null;
         let normalizedPhone = phone.replace(/^\+91/, '').replace(/^91/, '').replace(/^\+/, '');
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_patients')
+            .from('opdesk_sakhi_clinic_patients')
             .select('id')
             .eq('mobile', normalizedPhone)
             .maybeSingle();
@@ -619,7 +619,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
     async escalateThread(id: string, reason: string, status: string, score: number, actor: string) {
         const { error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({
                 status: status,
                 escalation_reason: reason,
@@ -643,7 +643,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
         const encrypted = this.chatDecrypter.encrypt(thread.user_id, message);
         const { data, error } = await this.orgSupabase
-            .from('sakhi_encrypted_chats')
+            .from('opdesk_sakhi_encrypted_chats')
             .insert([{
                 user_id: thread.user_id,
                 message_content: encrypted,
@@ -657,7 +657,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
         // Also update thread last message preview and time
         await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({
                 last_message_at: new Date(),
                 last_message_preview: message.substring(0, 100),
@@ -679,7 +679,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
     async resolveThread(id: string, userId?: string) {
         const { error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({
                 assigned_to: null,
                 assigned_user_id: null,
@@ -698,7 +698,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
 
     async refreshSummary(id: string, clinicalSummary: string, handoffSummary: string) {
         const { error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({
                 clinical_summary: clinicalSummary,
                 handoff_summary: handoffSummary,
@@ -711,7 +711,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     async findClinicians() {
         // Use orgSupabase — sakhi_clinic_users is in the Org/Hostinger DB
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_users')
+            .from('opdesk_sakhi_clinic_users')
             .select('id, email, role, is_available, last_seen_at')
             .in('role', ['Doctor', 'Nurse', 'Receptionist', 'DOCTOR', 'NURSE', 'Front_Desk', 'FRONT_DESK']);
         if (error) throw error;
@@ -735,7 +735,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
     async getBookingContext(threadId: string): Promise<any> {
         // 1. Get the thread to find the patient phone number (user_id)
         const { data: thread, error: threadError } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('user_id, clinic_id')
             .eq('id', threadId)
             .maybeSingle();
@@ -752,7 +752,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         let chatContext: any = {};
         try {
             const { data: stateRows } = await this.orgSupabase
-                .from('sakhi_chat_states')
+                .from('opdesk_sakhi_chat_states')
                 .select('context')
                 .eq('user_id', phoneNumber)
                 .maybeSingle();
@@ -765,7 +765,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         let patientProfile: any = {};
         try {
             const { data: userRows } = await this.orgSupabase
-                .from('sakhi_users')
+                .from('opdesk_sakhi_users')
                 .select('name, gender, location, zip_code')
                 .eq('phone_number', phoneNumber)
                 .maybeSingle();
@@ -778,7 +778,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         let leadData: any = {};
         try {
             const { data: leadRows } = await this.orgSupabase
-                .from('sakhi_clinic_leads')
+                .from('opdesk_sakhi_clinic_leads')
                 .select('id, status, source, problem, date_added')
                 .eq('phone', phoneNumber)
                 .eq('clinic_id', clinicId)
@@ -796,7 +796,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         if (apptId) {
             try {
                 const { data: apptRows } = await this.orgSupabase
-                    .from('sakhi_clinic_appointments')
+                    .from('opdesk_sakhi_clinic_appointments')
                     .select('id, doctor_name, doctor_id, appointment_date, appointment_time, appointment_display, status')
                     .eq('id', apptId)
                     .maybeSingle();
@@ -810,7 +810,7 @@ export class ThreadOperationsRepository implements OnModuleInit, OnModuleDestroy
         let operatorNotes: any[] = [];
         try {
             const { data: noteRows } = await this.supabase
-                .from('sakhi_clinic_patient_notes')
+                .from('opdesk_sakhi_clinic_patient_notes')
                 .select('note, created_by, created_at')
                 .eq('clinic_id', clinicId)
                 .order('created_at', { ascending: false })

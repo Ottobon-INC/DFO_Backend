@@ -10,7 +10,7 @@ export class MarkCompletedAction {
         const minDate = pastDate.toISOString().split('T')[0];
 
         const { data: appointments, error } = await supabase
-            .from('sakhi_clinic_appointments')
+            .from('opdesk_sakhi_clinic_appointments')
             .select(`
                 id,
                 appointment_date,
@@ -18,7 +18,7 @@ export class MarkCompletedAction {
                 status,
                 patient_name_snapshot,
                 doctor_name_snapshot,
-                patient:sakhi_clinic_patients(name)
+                patient:opdesk_sakhi_clinic_patients(name)
             `)
             .gte('appointment_date', minDate)
             .lte('appointment_date', today)
@@ -39,8 +39,8 @@ export class MarkCompletedAction {
 
     static async execute(supabase: SupabaseClient, appointmentId: string, userId: string, role: Role | string) {
         const { data: appt, error: fetchError } = await supabase
-            .from('sakhi_clinic_appointments')
-            .select('status, patient_name_snapshot, start_time, doctor_name_snapshot, patient:sakhi_clinic_patients(name)')
+            .from('opdesk_sakhi_clinic_appointments')
+            .select('status, patient_name_snapshot, start_time, doctor_name_snapshot, patient:opdesk_sakhi_clinic_patients(name)')
             .eq('id', appointmentId)
             .single();
 
@@ -65,7 +65,7 @@ export class MarkCompletedAction {
         }
 
         const { error: updateError } = await supabase
-            .from('sakhi_clinic_appointments')
+            .from('opdesk_sakhi_clinic_appointments')
             .update({
                 status: 'Completed'
             })

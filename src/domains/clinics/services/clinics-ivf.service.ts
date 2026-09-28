@@ -17,7 +17,7 @@ export class ClinicsIvfService {
 
         // 1. Get Active Cycle
         const { data: cycle, error: cycleError } = await client
-            .from('sakhi_ivf_cycles')
+            .from('opdesk_sakhi_ivf_cycles')
             .select('id')
             .eq('patient_id', patientId)
             .eq('clinic_id', clinicId)
@@ -27,7 +27,7 @@ export class ClinicsIvfService {
 
         // Fetch patient for demographics
         const { data: patient } = await client
-            .from('sakhi_clinic_patients')
+            .from('opdesk_sakhi_clinic_patients')
             .select('name, age, gender, extra_details')
             .eq('id', patientId)
             .maybeSingle();
@@ -65,23 +65,23 @@ export class ClinicsIvfService {
             stimulationSheetReq
         ] = await Promise.all([
             // @ts-ignore
-            client.from('sakhi_ivf_female_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('opdesk_sakhi_ivf_female_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_procedures').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('opdesk_sakhi_ivf_procedures').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'FEMALE').maybeSingle(),
+            client.from('opdesk_sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'FEMALE').maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'MALE').maybeSingle(),
+            client.from('opdesk_sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'MALE').maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_baseline_usg').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('opdesk_sakhi_ivf_baseline_usg').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_male_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('opdesk_sakhi_ivf_male_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_semen_analysis').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('opdesk_sakhi_ivf_semen_analysis').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_treatment_tracking').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('opdesk_sakhi_ivf_treatment_tracking').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('sakhi_ivf_stimulation_sheet').select('*').eq('cycle_id', cycleId).maybeSingle()
+            client.from('opdesk_sakhi_ivf_stimulation_sheet').select('*').eq('cycle_id', cycleId).maybeSingle()
         ]);
 
         const femaleProfile = femaleProfileReq.data ? { ...femaleProfileReq.data } : {};
@@ -121,7 +121,7 @@ export class ClinicsIvfService {
 
         // 1. Get or Create Active Cycle
         let { data: cycle, error: cycleError } = await client
-            .from('sakhi_ivf_cycles')
+            .from('opdesk_sakhi_ivf_cycles')
             .select('id')
             .eq('patient_id', patientId)
             .eq('clinic_id', clinicId)
@@ -136,7 +136,7 @@ export class ClinicsIvfService {
 
         if (!cycle) {
             const { data: newCycle, error: createError } = await client
-                .from('sakhi_ivf_cycles')
+                .from('opdesk_sakhi_ivf_cycles')
                 .insert({
                     patient_id: patientId,
                     clinic_id: clinicId,
@@ -167,7 +167,7 @@ export class ClinicsIvfService {
                     (async () => {
                         try {
                             const { data: currentPatient } = await client
-                                .from('sakhi_clinic_patients')
+                                .from('opdesk_sakhi_clinic_patients')
                                 .select('extra_details')
                                 .eq('id', patientId)
                                 .maybeSingle();
@@ -180,7 +180,7 @@ export class ClinicsIvfService {
                             };
 
                             await client
-                                .from('sakhi_clinic_patients')
+                                .from('opdesk_sakhi_clinic_patients')
                                 .update({ extra_details: extraDetails })
                                 .eq('id', patientId);
                         } catch (err) {
@@ -191,7 +191,7 @@ export class ClinicsIvfService {
             }
 
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_female_profile', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_female_profile', cycleId, clinicId, userId, {
                     ...cleanData,
                     lmp: this.sanitizeDate(cleanData.lmp),
                     exam_date: this.sanitizeDate(cleanData.exam_date),
@@ -201,7 +201,7 @@ export class ClinicsIvfService {
 
         if (payload.procedures) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_procedures', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_procedures', cycleId, clinicId, userId, {
                     hsg_rows: payload.procedures.hsg_rows || [],
                     hysteroscopy_rows: payload.procedures.hysteroscopy_rows || [],
                     laparoscopy_rows: payload.procedures.laparoscopy_rows || [],
@@ -211,7 +211,7 @@ export class ClinicsIvfService {
 
         if (payload.femaleLabPanels) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_lab_panels', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_lab_panels', cycleId, clinicId, userId, {
                     dates: payload.femaleLabPanels.dates || [],
                     lab_rows: payload.femaleLabPanels.lab_rows || [],
                     antithyroid_antibodies: payload.femaleLabPanels.antithyroid_antibodies || null,
@@ -222,7 +222,7 @@ export class ClinicsIvfService {
 
         if (payload.maleLabPanels) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_lab_panels', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_lab_panels', cycleId, clinicId, userId, {
                     dates: payload.maleLabPanels.dates || [],
                     lab_rows: payload.maleLabPanels.lab_rows || [],
                 }, { panel_type: 'MALE' })
@@ -231,7 +231,7 @@ export class ClinicsIvfService {
 
         if (payload.baselineUsg) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_baseline_usg', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_baseline_usg', cycleId, clinicId, userId, {
                     ...payload.baselineUsg,
                     usg_date: this.sanitizeDate(payload.baselineUsg.usg_date),
                 })
@@ -240,13 +240,13 @@ export class ClinicsIvfService {
 
         if (payload.maleProfile) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_male_profile', cycleId, clinicId, userId, payload.maleProfile)
+                this.upsertSection(client, 'opdesk_sakhi_ivf_male_profile', cycleId, clinicId, userId, payload.maleProfile)
             );
         }
 
         if (payload.semenAnalysis) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_semen_analysis', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_semen_analysis', cycleId, clinicId, userId, {
                     ...payload.semenAnalysis,
                     male_usg_date: this.sanitizeDate(payload.semenAnalysis.male_usg_date),
                     testicular_biopsy_date: this.sanitizeDate(payload.semenAnalysis.testicular_biopsy_date),
@@ -257,7 +257,7 @@ export class ClinicsIvfService {
 
         if (payload.treatmentTracking) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_treatment_tracking', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_treatment_tracking', cycleId, clinicId, userId, {
                     ...payload.treatmentTracking,
                     counselling_date: this.sanitizeDate(payload.treatmentTracking.counselling_date),
                     fm_date: this.sanitizeDate(payload.treatmentTracking.fm_date),
@@ -272,7 +272,7 @@ export class ClinicsIvfService {
 
         if (payload.stimulationSheet) {
             operations.push(
-                this.upsertSection(client, 'sakhi_ivf_stimulation_sheet', cycleId, clinicId, userId, {
+                this.upsertSection(client, 'opdesk_sakhi_ivf_stimulation_sheet', cycleId, clinicId, userId, {
                     ...payload.stimulationSheet,
                     hcg_date: this.sanitizeDate(payload.stimulationSheet.hcg_date),
                     or_date: this.sanitizeDate(payload.stimulationSheet.or_date),
