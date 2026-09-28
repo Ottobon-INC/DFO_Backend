@@ -24,7 +24,7 @@ export class JanmasethuRepository {
 
     async findThreads(user: JanmasethuUserContext): Promise<Thread[]> {
         let query = this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('*')
             .eq('domain', JANMASETHU_DOMAIN);
 
@@ -51,7 +51,7 @@ export class JanmasethuRepository {
             const latestMsg = await this.findLatestMessageByThread(t.id);
             
             let patientQuery = this.orgSupabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('name')
                 .eq('mobile', t.user_id);
             
@@ -76,7 +76,7 @@ export class JanmasethuRepository {
 
     async findThreadById(id: string, user?: JanmasethuUserContext): Promise<Thread | null> {
         let query = this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('*')
             .eq('id', id);
 
@@ -92,7 +92,7 @@ export class JanmasethuRepository {
 
     async createThread(dto: Partial<Thread>): Promise<Thread> {
         const { data, error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .insert([{ ...dto, domain: JANMASETHU_DOMAIN }])
             .select()
             .single();
@@ -102,7 +102,7 @@ export class JanmasethuRepository {
 
     async updateThreadAtomic(id: string, version: number, updates: Partial<Thread>, filters: Record<string, any> = {}): Promise<void> {
         let query = this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({ ...updates, version: version + 1 })
             .eq('id', id)
             .eq('version', version);
@@ -131,7 +131,7 @@ export class JanmasethuRepository {
         // Since id is an integer/serial in sakhi_encrypted_chats, parse it if possible, otherwise use string match
         const parsedId = parseInt(id, 10);
         const query = this.orgSupabase
-            .from('sakhi_encrypted_chats')
+            .from('opdesk_sakhi_encrypted_chats')
             .select('*');
         
         const { data, error } = await (isNaN(parsedId) ? query.eq('id', id) : query.eq('id', parsedId)).maybeSingle();
@@ -187,7 +187,7 @@ export class JanmasethuRepository {
     async findMessagesByThreadId(threadId: string): Promise<Message[]> {
         const thread = await this.findThreadById(threadId);
         let query = this.orgSupabase
-            .from('sakhi_encrypted_chats')
+            .from('opdesk_sakhi_encrypted_chats')
             .select('*');
 
         if (thread && thread.user_id) {
@@ -214,7 +214,7 @@ export class JanmasethuRepository {
                 for (const phoneVariant of phoneVariants) {
                     const hashedPhone = crypto.createHmac('sha256', pepper).update(phoneVariant).digest('hex');
                     const { data: userRow } = await this.orgSupabase
-                        .from('sakhi_users')
+                        .from('opdesk_sakhi_users')
                         .select('user_id')
                         .eq('phone_number', hashedPhone)
                         .maybeSingle();
@@ -250,7 +250,7 @@ export class JanmasethuRepository {
     async findRecentMessages(threadId: string, limit: number): Promise<Message[]> {
         const thread = await this.findThreadById(threadId);
         let query = this.orgSupabase
-            .from('sakhi_encrypted_chats')
+            .from('opdesk_sakhi_encrypted_chats')
             .select('*')
             .order('created_at', { ascending: false });
 
@@ -269,7 +269,7 @@ export class JanmasethuRepository {
                 for (const phoneVariant of phoneVariants) {
                     const hashedPhone = crypto.createHmac('sha256', pepper).update(phoneVariant).digest('hex');
                     const { data: userRow } = await this.orgSupabase
-                        .from('sakhi_users')
+                        .from('opdesk_sakhi_users')
                         .select('user_id')
                         .eq('phone_number', hashedPhone)
                         .maybeSingle();
@@ -309,7 +309,7 @@ export class JanmasethuRepository {
 
     async findLatestSentimentByThread(threadId: string): Promise<any | null> {
         const { data, error } = await this.supabase
-            .from('sentiment_evaluations')
+            .from('opdesk_sentiment_evaluations')
             .select('*')
             .eq('thread_id', threadId)
             .order('created_at', { ascending: false })
@@ -334,7 +334,7 @@ export class JanmasethuRepository {
 
     async findSakhiPatientByPhone(phone: string): Promise<any | null> {
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_patients')
+            .from('opdesk_sakhi_clinic_patients')
             .select('id, name, mobile, clinic_id')
             .eq('mobile', phone)
             .maybeSingle();
@@ -374,7 +374,7 @@ export class JanmasethuRepository {
 
     async linkThreadToPatient(threadId: string, patientId: string): Promise<void> {
         const { error } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({ patient_id: patientId })
             .eq('id', threadId);
         if (error) throw error;
@@ -404,7 +404,7 @@ export class JanmasethuRepository {
 
     async findRiskLogsByPatient(patientId: string, limit: number = 10): Promise<JanmasethuRiskLog[]> {
         const { data, error } = await this.supabase
-            .from('dfo_risk_logs')
+            .from('opdesk_dfo_risk_logs')
             .select('*')
             .eq('patient_id', patientId)
             .order('created_at', { ascending: false })
@@ -415,14 +415,14 @@ export class JanmasethuRepository {
 
     async insertRiskLog(log: Partial<JanmasethuRiskLog>): Promise<void> {
         const { error } = await this.supabase
-            .from('dfo_risk_logs')
+            .from('opdesk_dfo_risk_logs')
             .insert([log]);
         if (error) throw error;
     }
 
     async findSummaryByThread(threadId: string): Promise<JanmasethuSummary | null> {
         const { data, error } = await this.supabase
-            .from('dfo_summaries')
+            .from('opdesk_dfo_summaries')
             .select('*')
             .eq('thread_id', threadId)
             .maybeSingle();
@@ -431,7 +431,7 @@ export class JanmasethuRepository {
     }
 
     async upsertSummary(summary: JanmasethuSummary): Promise<void> {
-        const { error } = await this.supabase.from('dfo_summaries').upsert([summary]);
+        const { error } = await this.supabase.from('opdesk_dfo_summaries').upsert([summary]);
         if (error) throw error;
     }
 
@@ -446,7 +446,7 @@ export class JanmasethuRepository {
     // --- AUDIT, ROUTING & FEEDBACK ---
 
     async insertRoutingEvent(event: any): Promise<void> {
-        const { error } = await this.supabase.from('routing_events').insert([event]);
+        const { error } = await this.supabase.from('opdesk_routing_events').insert([event]);
         if (error) throw error;
     }
 
@@ -458,7 +458,7 @@ export class JanmasethuRepository {
     // --- WORKLOAD & AVAILABILITY ---
 
     async findAvailableClinicians(specialty?: string): Promise<JanmasethuClinicianWorkload[]> {
-        let query = this.supabase.from('dfo_clinician_workload').select('*').eq('is_available', true);
+        let query = this.supabase.from('opdesk_dfo_clinician_workload').select('*').eq('is_available', true);
         if (specialty) query = query.eq('specialty', specialty);
         const { data, error } = await query;
         if (error) throw error;
@@ -473,7 +473,7 @@ export class JanmasethuRepository {
 
     async findAppointmentById(id: string): Promise<DFOAppointment> {
         const { data, error } = await this.supabase
-            .from('dfo_appointments')
+            .from('opdesk_dfo_appointments')
             .select('*')
             .eq('id', id)
             .single();
@@ -483,7 +483,7 @@ export class JanmasethuRepository {
 
     async updateAppointment(id: string, dto: any): Promise<void> {
         const { error } = await this.orgSupabase
-            .from('sakhi_clinic_appointments')
+            .from('opdesk_sakhi_clinic_appointments')
             .update(dto)
             .eq('id', id);
         if (error) throw error;
@@ -491,7 +491,7 @@ export class JanmasethuRepository {
 
     async findPastDueAppointments(now: Date): Promise<DFOAppointment[]> {
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_appointments')
+            .from('opdesk_sakhi_clinic_appointments')
             .select('*')
             .eq('status', AppointmentStatus.SCHEDULED)
             .lt('appointment_date', now.toISOString());
@@ -501,7 +501,7 @@ export class JanmasethuRepository {
 
     async createAppointment(dto: Partial<DFOAppointment>): Promise<DFOAppointment> {
         this.logger.log(`Attempting to create appointment for patient: ${dto.patient_id} with doctor: ${dto.doctor_id}`);
-        const { data, error } = await this.supabase.from('dfo_appointments').insert([dto]).select().single();
+        const { data, error } = await this.supabase.from('opdesk_dfo_appointments').insert([dto]).select().single();
         if (error) {
             this.logger.error(`Appointment creation failed: ${error.message} | Patient: ${dto.patient_id} | Doctor: ${dto.doctor_id}`);
             throw error;
@@ -512,7 +512,7 @@ export class JanmasethuRepository {
 
     async findAllAppointments(): Promise<any[]> {
         const { data, error } = await this.supabase
-            .from('dfo_appointments')
+            .from('opdesk_dfo_appointments')
             .select(`
                 *,
                 patient:dfo_patients!patient_id (full_name, phone_number),
@@ -538,7 +538,7 @@ export class JanmasethuRepository {
 
     async findAllRiskLogs(): Promise<any[]> {
         const { data, error } = await this.supabase
-            .from('dfo_risk_logs')
+            .from('opdesk_dfo_risk_logs')
             .select(`
                 *,
                 patient:dfo_patients!patient_id (full_name)
@@ -575,7 +575,7 @@ export class JanmasethuRepository {
 
     async createNotificationLog(log: any): Promise<string> {
         const { data, error } = await this.supabase
-            .from('dfo_notification_logs')
+            .from('opdesk_dfo_notification_logs')
             .insert([log])
             .select('id')
             .single();
@@ -585,7 +585,7 @@ export class JanmasethuRepository {
 
     async updateNotificationLog(id: string, update: any): Promise<void> {
         const { error } = await this.supabase
-            .from('dfo_notification_logs')
+            .from('opdesk_dfo_notification_logs')
             .update(update)
             .eq('id', id);
         if (error) throw error;
@@ -601,7 +601,7 @@ export class JanmasethuRepository {
         payload?: any
     }): Promise<void> {
         const { error } = await this.supabase
-            .from('sakhi_audit_logs')
+            .from('opdesk_sakhi_audit_logs')
             .insert([{
                 actor_id: log.actor_id || 'system',
                 action: log.event_type || log.action || 'SYSTEM_EVENT',
@@ -619,7 +619,7 @@ export class JanmasethuRepository {
 
     async findAuditLogs(limit: number = 100): Promise<any[]> {
         const { data, error } = await this.supabase
-            .from('sakhi_audit_logs')
+            .from('opdesk_sakhi_audit_logs')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(limit);
@@ -643,20 +643,20 @@ export class JanmasethuRepository {
     async addPrescription(dto: DFOPrescription): Promise<DFOPrescription> {
         // Strip out consultation_id if present because sakhi_clinic_prescriptions uses group_id
         const { consultation_id, ...insertPayload } = dto;
-        const { data, error } = await this.supabase.from('sakhi_clinic_prescriptions').insert([insertPayload]).select().single();
+        const { data, error } = await this.supabase.from('opdesk_sakhi_clinic_prescriptions').insert([insertPayload]).select().single();
         if (error) throw error;
         return data as DFOPrescription;
     }
 
     async uploadReportMetadata(dto: DFOMedicalReport): Promise<DFOMedicalReport> {
-        const { data, error } = await this.supabase.from('dfo_medical_reports').insert([dto]).select().single();
+        const { data, error } = await this.supabase.from('opdesk_dfo_medical_reports').insert([dto]).select().single();
         if (error) throw error;
         return data as DFOMedicalReport;
     }
 
     async findPatientHistory(patientId: string): Promise<any> {
         const { data: consultations } = await this.supabase.from('dfo_consultations').select('*').eq('patient_id', patientId);
-        const { data: reports } = await this.supabase.from('dfo_medical_reports').select('*').eq('patient_id', patientId);
+        const { data: reports } = await this.supabase.from('opdesk_dfo_medical_reports').select('*').eq('patient_id', patientId);
         return { consultations, reports };
     }
 
@@ -674,7 +674,7 @@ export class JanmasethuRepository {
 
         // 1. Thread Risk Distribution
         const { data: threads } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('status, ownership')
             .eq('domain', JANMASETHU_DOMAIN);
 
@@ -724,12 +724,12 @@ export class JanmasethuRepository {
      */
     private async calculateSLAPerformance(): Promise<number> {
         const { data: breachLogs } = await this.supabase
-            .from('audit_logs')
+            .from('opdesk_audit_logs')
             .select('id')
             .eq('event_type', 'SLA_BREACH');
 
         const { data: successLogs } = await this.supabase
-            .from('audit_logs')
+            .from('opdesk_audit_logs')
             .select('id')
             .eq('event_type', 'SLA_CANCELED'); // Successful human intervention before breach
 
@@ -788,7 +788,7 @@ export class JanmasethuRepository {
 
     async findWorkload(): Promise<any[]> {
         const { data: doctors } = await this.supabase.from('dfo_doctors').select('*');
-        const { data: appointments } = await this.supabase.from('dfo_appointments').select('doctor_id');
+        const { data: appointments } = await this.supabase.from('opdesk_dfo_appointments').select('doctor_id');
 
         return (doctors || []).map(doc => ({
             ...doc,
@@ -804,7 +804,7 @@ export class JanmasethuRepository {
         const to = from + params.limit - 1;
 
         let query = this.orgSupabase
-            .from('sakhi_clinic_leads')
+            .from('opdesk_sakhi_clinic_leads')
             .select('*', { count: 'exact' })
             .order('date_added', { ascending: false })
             .range(from, to);
@@ -825,7 +825,7 @@ export class JanmasethuRepository {
 
     async createLead(payload: any) {
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_leads')
+            .from('opdesk_sakhi_clinic_leads')
             .insert(payload)
             .select()
             .single();
@@ -843,7 +843,7 @@ export class JanmasethuRepository {
         cutoff.setHours(cutoff.getHours() - hours);
 
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_leads')
+            .from('opdesk_sakhi_clinic_leads')
             .select('*')
             .eq('status', 'New Inquiry')
             .lt('date_added', cutoff.toISOString());
@@ -857,7 +857,7 @@ export class JanmasethuRepository {
         if (followUpNotes) updates.inquiry = followUpNotes;
 
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_leads')
+            .from('opdesk_sakhi_clinic_leads')
             .update(updates)
             .eq('id', leadId)
             .select()
@@ -873,7 +873,7 @@ export class JanmasethuRepository {
      */
     async referCase(threadId: string, targetDoctorId: string, actorId: string, reason: string): Promise<void> {
         const { data: thread, error: threadError } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .select('*')
             .eq('id', threadId)
             .single();
@@ -882,7 +882,7 @@ export class JanmasethuRepository {
 
         // 1. Update Thread Assignment
         const { error: updateError } = await this.supabase
-            .from('conversation_threads')
+            .from('opdesk_conversation_threads')
             .update({
                 assigned_user_id: targetDoctorId,
                 assigned_role: JanmasethuUserRole.DOCTOR,
@@ -915,7 +915,7 @@ export class JanmasethuRepository {
 
     async findClinicalMetrics(date: string) {
         const { data, error } = await this.supabase
-            .from('dfo_appointments')
+            .from('opdesk_dfo_appointments')
             .select('status')
             .eq('appointment_date', date);
 
@@ -941,7 +941,7 @@ export class JanmasethuRepository {
 
     async findLeadById(id: string) {
         const { data, error } = await this.orgSupabase
-            .from('sakhi_clinic_leads')
+            .from('opdesk_sakhi_clinic_leads')
             .select('*')
             .eq('id', id)
             .single();
@@ -983,7 +983,7 @@ export class JanmasethuRepository {
 
     async findHqClinic() {
         const { data, error } = await this.orgSupabase
-            .from('clinics')
+            .from('opdesk_clinics')
             .select('id')
             .eq('name', 'HQ / Test Clinic')
             .limit(1)

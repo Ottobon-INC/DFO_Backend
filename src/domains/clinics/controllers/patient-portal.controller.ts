@@ -45,7 +45,7 @@ export class PatientPortalController {
         try {
             // 1. Fetch Patient details (Name, UHID, Gender, Age, Mobile)
             const { data: patientProfile } = await supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id, name, uhid, gender, age, mobile, blood_group')
                 .eq('id', patient.sub)
                 .maybeSingle();
@@ -53,7 +53,7 @@ export class PatientPortalController {
             // 2. Fetch upcoming or active appointment today
             const todayStr = new Date().toISOString().split('T')[0];
             const { data: upcomingAppointmentRaw } = await supabase
-                .from('sakhi_clinic_appointments')
+                .from('opdesk_sakhi_clinic_appointments')
                 .select(`
                     id,
                     appointment_date,
@@ -92,7 +92,7 @@ export class PatientPortalController {
 
             // 3. Fetch latest active prescriptions (structured from sakhi_clinic_prescriptions)
             const { data: prescriptionsRaw } = await supabase
-                .from('sakhi_clinic_prescriptions')
+                .from('opdesk_sakhi_clinic_prescriptions')
                 .select('id, medication_name, dosage, frequency, duration, instructions, created_at, status')
                 .eq('patient_id', patient.sub)
                 .neq('status', 'CANCELLED')
@@ -111,7 +111,7 @@ export class PatientPortalController {
 
             // 4. Fetch latest documents (lab reports, scans, and PDFs)
             const { data: documentsRaw } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('id, name, document_type, file_path, created_at')
                 .eq('patient_id', patient.sub)
                 .neq('status', 'DELETED')
@@ -173,7 +173,7 @@ export class PatientPortalController {
 
             // 5. Fetch latest vitals
             const { data: vitalsRows } = await supabase
-                .from('sakhi_clinic_patient_vitals')
+                .from('opdesk_sakhi_clinic_patient_vitals')
                 .select('vital_type, vital_value, recorded_at')
                 .eq('patient_id', patient.sub)
                 .order('recorded_at', { ascending: false })
@@ -197,7 +197,7 @@ export class PatientPortalController {
 
             // 6. Fetch Medical Alerts
             const { data: allergies } = await supabase
-                .from('sakhi_clinic_allergies')
+                .from('opdesk_sakhi_clinic_allergies')
                 .select('allergy_name, severity')
                 .eq('patient_id', patient.sub);
 
@@ -245,7 +245,7 @@ export class PatientPortalController {
         try {
             // Fixed query: start_time instead of appointment_time, join doctor
             const { data: appointments, error } = await supabase
-                .from('sakhi_clinic_appointments')
+                .from('opdesk_sakhi_clinic_appointments')
                 .select(`
                     id,
                     appointment_date,
@@ -329,7 +329,7 @@ export class PatientPortalController {
 
         try {
             const { data: admission } = await supabase
-                .from('sakhi_clinic_admissions')
+                .from('opdesk_sakhi_clinic_admissions')
                 .select(`
                     id, 
                     status, 
@@ -362,7 +362,7 @@ export class PatientPortalController {
             let attendingDoctorName = 'Doctor Assigned';
             if (admission.attending_doctor_id) {
                 const { data: doctor } = await supabase
-                    .from('sakhi_clinic_users')
+                    .from('opdesk_sakhi_clinic_users')
                     .select('first_name, last_name')
                     .eq('id', admission.attending_doctor_id)
                     .maybeSingle();
@@ -400,14 +400,14 @@ export class PatientPortalController {
         try {
             // 1. Fetch Documents (Prescriptions, Lab Reports, Scans)
             const { data: documentsRaw } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('*')
                 .eq('patient_id', patient.sub)
                 .order('created_at', { ascending: false });
 
             // 2. Fetch Structured Prescriptions
             const { data: prescriptionsRaw } = await supabase
-                .from('sakhi_clinic_prescriptions')
+                .from('opdesk_sakhi_clinic_prescriptions')
                 .select('*')
                 .eq('patient_id', patient.sub)
                 .neq('status', 'CANCELLED')
@@ -489,7 +489,7 @@ export class PatientPortalController {
 
         try {
             let query = supabase
-                .from('sakhi_clinic_patient_timeline_view')
+                .from('opdesk_sakhi_clinic_patient_timeline_view')
                 .select('*')
                 .eq('patient_id', patient.sub);
 

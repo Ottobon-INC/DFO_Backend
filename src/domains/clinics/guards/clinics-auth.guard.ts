@@ -34,7 +34,7 @@ export class ClinicsAuthGuard implements CanActivate {
                 // Query DB to verify the user is still active (blocks Zombie Tokens)
                 const supabase = this.supabaseService.getClient();
                 const { data: userRecord, error } = await supabase
-                    .from('sakhi_clinic_users')
+                    .from('opdesk_sakhi_clinic_users')
                     .select('is_active')
                     .eq('id', decoded.sub)
                     .single();

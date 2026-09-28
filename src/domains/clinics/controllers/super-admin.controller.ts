@@ -93,7 +93,7 @@ export class SuperAdminController {
             // Update clinic with specialty if provided
             if (specialty && rpcData?.clinic_id) {
                 try {
-                    await supabase.from('clinics').update({ specialty }).eq('id', rpcData.clinic_id);
+                    await supabase.from('opdesk_clinics').update({ specialty }).eq('id', rpcData.clinic_id);
                 } catch (err) {
                     this.logger.error('Failed to update clinic specialty', err);
                 }
@@ -119,7 +119,7 @@ export class SuperAdminController {
         const supabase = this.supabaseService.getClient();
         try {
             const { data: clinics, error } = await supabase
-                .from('clinics')
+                .from('opdesk_clinics')
                 .select('*')
                 .eq('is_active', true)
                 .order('created_at', { ascending: false });
@@ -127,7 +127,7 @@ export class SuperAdminController {
             if (error) throw error;
             
             const { data: users, error: usersError } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .select('clinic_id, id');
             
             if (usersError) throw usersError;
@@ -152,9 +152,9 @@ export class SuperAdminController {
         const supabase = this.supabaseService.getClient();
         try {
             const results = await Promise.allSettled([
-                supabase.from('clinics').select('*', { count: 'exact', head: true }).eq('is_active', true),
-                supabase.from('sakhi_clinic_patients').select('*', { count: 'exact', head: true }),
-                supabase.from('sakhi_clinic_documents').select('*', { count: 'exact', head: true })
+                supabase.from('opdesk_clinics').select('*', { count: 'exact', head: true }).eq('is_active', true),
+                supabase.from('opdesk_sakhi_clinic_patients').select('*', { count: 'exact', head: true }),
+                supabase.from('opdesk_sakhi_clinic_documents').select('*', { count: 'exact', head: true })
             ]);
 
             const total_clinics = results[0].status === 'fulfilled' && !results[0].value.error ? results[0].value.count : 0;
@@ -193,10 +193,10 @@ export class SuperAdminController {
         const supabase = this.supabaseService.getClient();
         try {
             const [clinicsRes, patientsRes, leadsRes, appointmentsRes] = await Promise.all([
-                supabase.from('clinics').select('id, name', { count: 'exact' }).eq('is_active', true),
-                supabase.from('sakhi_clinic_patients').select('id', { count: 'exact' }),
-                supabase.from('sakhi_clinic_leads').select('id, status, source, clinic_id'),
-                supabase.from('sakhi_clinic_appointments').select('id, clinic_id')
+                supabase.from('opdesk_clinics').select('id, name', { count: 'exact' }).eq('is_active', true),
+                supabase.from('opdesk_sakhi_clinic_patients').select('id', { count: 'exact' }),
+                supabase.from('opdesk_sakhi_clinic_leads').select('id, status, source, clinic_id'),
+                supabase.from('opdesk_sakhi_clinic_appointments').select('id, clinic_id')
             ]);
 
             const clinicsData = clinicsRes.data || [];
@@ -249,14 +249,14 @@ export class SuperAdminController {
     async getClinicAnalytics(@Param('id') id: string, @Query('period') period: string = 'month') {
         const supabase = this.supabaseService.getClient();
         try {
-            const { data: clinic } = await supabase.from('clinics').select('name').eq('id', id).single();
+            const { data: clinic } = await supabase.from('opdesk_clinics').select('name').eq('id', id).single();
             if (!clinic) throw new HttpException({ success: false, error: 'Clinic not found' }, HttpStatus.NOT_FOUND);
 
             const [patientsRes, leadsRes, appointmentsRes, usersRes] = await Promise.all([
-                supabase.from('sakhi_clinic_patients').select('id', { count: 'exact' }).eq('clinic_id', id),
-                supabase.from('sakhi_clinic_leads').select('id, status, source').eq('clinic_id', id),
-                supabase.from('sakhi_clinic_appointments').select('id, source, appointment_type').eq('clinic_id', id),
-                supabase.from('sakhi_clinic_users').select('id', { count: 'exact' }).eq('clinic_id', id)
+                supabase.from('opdesk_sakhi_clinic_patients').select('id', { count: 'exact' }).eq('clinic_id', id),
+                supabase.from('opdesk_sakhi_clinic_leads').select('id, status, source').eq('clinic_id', id),
+                supabase.from('opdesk_sakhi_clinic_appointments').select('id, source, appointment_type').eq('clinic_id', id),
+                supabase.from('opdesk_sakhi_clinic_users').select('id', { count: 'exact' }).eq('clinic_id', id)
             ]);
 
             const leadsData = leadsRes.data || [];
@@ -315,7 +315,7 @@ export class SuperAdminController {
         try {
             // 1. Soft delete all users belonging to this clinic
             const { error: usersError } = await supabase
-                .from('sakhi_clinic_users')
+                .from('opdesk_sakhi_clinic_users')
                 .update({ is_active: false })
                 .eq('clinic_id', id);
             
@@ -323,13 +323,13 @@ export class SuperAdminController {
 
             // Also delete their clinic_staff assignments
             await supabase
-                .from('clinic_staff')
+                .from('opdesk_clinic_staff')
                 .delete()
                 .eq('clinic_id', id);
 
             // 2. Soft delete the clinic
             const { error: clinicError } = await supabase
-                .from('clinics')
+                .from('opdesk_clinics')
                 .update({ is_active: false })
                 .eq('id', id);
 
@@ -352,7 +352,7 @@ export class SuperAdminController {
         const supabase = this.supabaseService.getClient();
         try {
             let query = supabase
-                .from('sakhi_clinic_demo_requests')
+                .from('opdesk_sakhi_clinic_demo_requests')
                 .select('*')
                 .order('created_at', { ascending: false });
 
@@ -380,7 +380,7 @@ export class SuperAdminController {
             if (body.assigned_to) updatePayload.assigned_to = body.assigned_to;
 
             const { data, error } = await supabase
-                .from('sakhi_clinic_demo_requests')
+                .from('opdesk_sakhi_clinic_demo_requests')
                 .update(updatePayload)
                 .eq('id', id)
                 .select()

@@ -19,7 +19,7 @@ export class KnowledgeController {
 
         try {
             const { data, error, count } = await supabase
-                .from('sakhi_knowledge_hub')
+                .from('opdesk_sakhi_knowledge_hub')
                 .select('*', { count: 'exact' })
                 .order('published_at', { ascending: false })
                 .range(from, to);

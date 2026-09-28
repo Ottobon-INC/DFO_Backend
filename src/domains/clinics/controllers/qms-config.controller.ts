@@ -16,7 +16,7 @@ export class QMSConfigController {
         const supabase = this.supabaseService.getClient();
 
         let { data, error } = await supabase
-            .from('tenant_configs')
+            .from('opdesk_tenant_configs')
             .select('*')
             .eq('tenant_id', tenantId)
             .single();
@@ -39,7 +39,7 @@ export class QMSConfigController {
             };
 
             const { data: newData, error: insertError } = await supabase
-                .from('tenant_configs')
+                .from('opdesk_tenant_configs')
                 .insert(defaultConfig)
                 .select()
                 .single();
@@ -59,7 +59,7 @@ export class QMSConfigController {
         const supabase = this.supabaseService.getClient();
 
         const { data, error } = await supabase
-            .from('tenant_configs')
+            .from('opdesk_tenant_configs')
             .upsert({
                 tenant_id: tenantId,
                 queue_rules: body.queue_rules,

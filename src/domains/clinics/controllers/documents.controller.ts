@@ -100,7 +100,7 @@ export class DocumentsController {
                     throw new HttpException({ success: false, error: 'Invalid patient ID format' }, HttpStatus.BAD_REQUEST);
                 }
                 const { data: patient, error: patientError } = await supabase
-                    .from('sakhi_clinic_patients')
+                    .from('opdesk_sakhi_clinic_patients')
                     .select('clinic_id')
                     .eq('id', patient_id)
                     .single();
@@ -115,7 +115,7 @@ export class DocumentsController {
                 }
             }
 
-            const { data, error } = await supabase.from('sakhi_clinic_documents').insert([{
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_documents').insert([{
                 clinic_id,
                 patient_id: patient_id || null,
                 name,
@@ -178,7 +178,7 @@ export class DocumentsController {
             await this.s3Service.uploadFile(s3Path, buffer, mime_type);
 
             const supabase = this.supabaseService.getClient();
-            const { data, error } = await supabase.from('sakhi_clinic_documents').insert([{
+            const { data, error } = await supabase.from('opdesk_sakhi_clinic_documents').insert([{
                 clinic_id,
                 patient_id: null,
                 name,
@@ -224,7 +224,7 @@ export class DocumentsController {
         try {
             const supabase = this.supabaseService.getClient();
             const { data, count, error } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('*, uploader:sakhi_clinic_users!uploaded_by(first_name, last_name)', { count: 'exact' })
                 .eq('clinic_id', clinic_id)
                 .is('patient_id', null)
@@ -298,7 +298,7 @@ export class DocumentsController {
 
             // 1. Fetch document and verify ownership
             const { data: document, error: docError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('clinic_id, file_path, status, name')
                 .eq('id', documentId)
                 .single();
@@ -395,7 +395,7 @@ export class DocumentsController {
 
             // 1. Fetch document and verify ownership
             const { data: document, error: docError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('clinic_id, status')
                 .eq('id', documentId)
                 .single();
@@ -416,7 +416,7 @@ export class DocumentsController {
 
             // 2. Fetch target patient and verify ownership
             const { data: patient, error: patientError } = await supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('clinic_id')
                 .eq('id', patient_id)
                 .single();
@@ -438,7 +438,7 @@ export class DocumentsController {
             };
 
             const { data: updatedDoc, error: updateError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .update(updatePayload)
                 .eq('id', documentId)
                 .select()
@@ -496,7 +496,7 @@ export class DocumentsController {
 
             // 1. Fetch document and verify ownership
             const { data: document, error: docError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('clinic_id, status, patient_id')
                 .eq('id', documentId)
                 .single();
@@ -518,7 +518,7 @@ export class DocumentsController {
 
             // 2. Execute unlink
             const { data: updatedDoc, error: updateError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .update({ 
                     patient_id: null, 
                     status: 'unassigned' 
@@ -569,7 +569,7 @@ export class DocumentsController {
 
             // 1. Fetch document and verify ownership
             const { data: document, error: docError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('clinic_id, file_path')
                 .eq('id', documentId)
                 .single();
@@ -585,7 +585,7 @@ export class DocumentsController {
 
             // 2. Delete from Database
             const { error: deleteError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .delete()
                 .eq('id', documentId);
 
@@ -641,7 +641,7 @@ export class DocumentsController {
 
             // Validate Document Ownership and Status
             const { data: document, error: docError } = await supabase
-                .from('sakhi_clinic_documents')
+                .from('opdesk_sakhi_clinic_documents')
                 .select('clinic_id, status')
                 .eq('id', documentId)
                 .single();
@@ -661,7 +661,7 @@ export class DocumentsController {
 
             // Check for existing mobile to prevent duplicates
             const { data: existing, error: existingError } = await supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id')
                 .eq('clinic_id', clinic_id)
                 .eq('mobile', mobile)

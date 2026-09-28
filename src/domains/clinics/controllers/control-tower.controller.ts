@@ -20,7 +20,7 @@ export class ControlTowerController {
 
         try {
             const { data: appointments, error } = await supabase
-                .from('sakhi_clinic_appointments')
+                .from('opdesk_sakhi_clinic_appointments')
                 .select('id, status, created_at, updated_at, patient_name_snapshot, doctor_name_snapshot, sakhi_clinic_patients (first_name, last_name)')
                 .eq('clinic_id', clinic_id)
                 .eq('appointment_date', targetDate)
@@ -29,7 +29,7 @@ export class ControlTowerController {
             if (error) {
                 // If join fails, retry simple select
                 const { data: simpleAppts, error: simpleError } = await supabase
-                    .from('sakhi_clinic_appointments')
+                    .from('opdesk_sakhi_clinic_appointments')
                     .select('id, status, created_at, updated_at, patient_name_snapshot, doctor_name_snapshot')
                     .eq('clinic_id', clinic_id)
                     .eq('appointment_date', targetDate)
@@ -76,7 +76,7 @@ export class ControlTowerController {
         const supabase = this.supabaseService.getClient();
         try {
             const { data: leads, error } = await supabase
-                .from('sakhi_clinic_leads')
+                .from('opdesk_sakhi_clinic_leads')
                 .select('status')
                 .eq('clinic_id', clinic_id);
 
@@ -116,7 +116,7 @@ export class ControlTowerController {
 
         try {
             const { data: appointments, error } = await supabase
-                .from('sakhi_clinic_appointments')
+                .from('opdesk_sakhi_clinic_appointments')
                 .select('id, status, created_at, updated_at, patient_name_snapshot, doctor_name_snapshot, sakhi_clinic_patients (first_name, last_name)')
                 .eq('clinic_id', clinic_id)
                 .eq('appointment_date', targetDate)
@@ -164,7 +164,7 @@ export class ControlTowerController {
 
         try {
             const { data: appointments, error } = await supabase
-                .from('sakhi_clinic_appointments')
+                .from('opdesk_sakhi_clinic_appointments')
                 .select('status')
                 .eq('clinic_id', clinic_id)
                 .eq('appointment_date', targetDate);
@@ -201,7 +201,7 @@ export class ControlTowerController {
 
         try {
             const { data: appointments, error } = await supabase
-                .from('sakhi_clinic_appointments')
+                .from('opdesk_sakhi_clinic_appointments')
                 .select('id, status, doctor_id, doctor_name_snapshot')
                 .eq('clinic_id', clinic_id)
                 .eq('appointment_date', targetDate);

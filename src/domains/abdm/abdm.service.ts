@@ -368,7 +368,7 @@ export class AbdmService {
             try {
                 // 1. Verify patient and get clinic_id
                 const { data: patient, error: patientError } = await this.supabase
-                    .from('sakhi_clinic_patients')
+                    .from('opdesk_sakhi_clinic_patients')
                     .select('clinic_id')
                     .eq('id', patientId)
                     .single();
@@ -381,7 +381,7 @@ export class AbdmService {
 
                 // 2. Check existing active ABHA for this patient
                 const { data: existingActive } = await this.supabase
-                    .from('patient_abha')
+                    .from('opdesk_patient_abha')
                     .select('id, abha_number')
                     .eq('patient_id', patientId)
                     .eq('is_active', true)
@@ -395,7 +395,7 @@ export class AbdmService {
 
                     // If same number or updating, update the record
                     await this.supabase
-                        .from('patient_abha')
+                        .from('opdesk_patient_abha')
                         .update({
                             abha_number: abhaNumber || null,
                             abha_address: abhaAddress || null,
@@ -409,7 +409,7 @@ export class AbdmService {
                     // 3. Check Clinic-level Number conflict
                     if (abhaNumber) {
                         const { data: numberConflict } = await this.supabase
-                            .from('patient_abha')
+                            .from('opdesk_patient_abha')
                             .select('id')
                             .eq('clinic_id', clinicId)
                             .eq('abha_number', abhaNumber)
@@ -424,7 +424,7 @@ export class AbdmService {
                     // 4. Check Clinic-level Address conflict
                     if (abhaAddress) {
                         const { data: addressConflict } = await this.supabase
-                            .from('patient_abha')
+                            .from('opdesk_patient_abha')
                             .select('id')
                             .eq('clinic_id', clinicId)
                             .eq('abha_address', abhaAddress)
@@ -447,7 +447,7 @@ export class AbdmService {
                         verified_at: new Date().toISOString()
                     };
 
-                    const { error: insertError } = await this.supabase.from('patient_abha').insert([payload]);
+                    const { error: insertError } = await this.supabase.from('opdesk_patient_abha').insert([payload]);
                     if (insertError) {
                         this.logger.error(`Database insert error for patient_abha: ${JSON.stringify(insertError)}`);
                         throw new HttpException('Database error while persisting ABHA', HttpStatus.INTERNAL_SERVER_ERROR);
@@ -510,7 +510,7 @@ export class AbdmService {
         try {
             // 1. Verify patient context
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id')
                 .eq('id', patientId)
                 .single();
@@ -521,7 +521,7 @@ export class AbdmService {
 
             // Allow suggestions even if abha_address is null
             const { data: existingActive } = await this.supabase
-                .from('patient_abha')
+                .from('opdesk_patient_abha')
                 .select('id')
                 .eq('patient_id', patientId)
                 .eq('is_active', true)
@@ -585,7 +585,7 @@ export class AbdmService {
         try {
             // 1. Verify patient context and clinic
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('clinic_id')
                 .eq('id', patientId)
                 .single();
@@ -596,7 +596,7 @@ export class AbdmService {
 
             // 2. Ensure active ABHA record exists
             const { data: existingActive } = await this.supabase
-                .from('patient_abha')
+                .from('opdesk_patient_abha')
                 .select('id, abha_number')
                 .eq('patient_id', patientId)
                 .eq('is_active', true)
@@ -643,7 +643,7 @@ export class AbdmService {
 
             // 6. Update the existing active patient_abha record
             const { error: updateError } = await this.supabase
-                .from('patient_abha')
+                .from('opdesk_patient_abha')
                 .update({
                     abha_address: preferredAbhaAddress,
                     abha_number: abhaNumberToSave, // Usually unchanged, but reconciled if null previously
@@ -692,7 +692,7 @@ export class AbdmService {
         try {
             // 1. Verify patient exists
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id')
                 .eq('id', patientId)
                 .single();
@@ -755,7 +755,7 @@ export class AbdmService {
         try {
             // 1. Verify patient exists
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id')
                 .eq('id', patientId)
                 .single();
@@ -835,7 +835,7 @@ export class AbdmService {
         try {
             // 1. Verify patient and get clinic_id
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('clinic_id')
                 .eq('id', patientId)
                 .single();
@@ -904,7 +904,7 @@ export class AbdmService {
             // 7. Check for conflicts and persist
             // Check existing active ABHA for this patient
             const { data: existingActive } = await this.supabase
-                .from('patient_abha')
+                .from('opdesk_patient_abha')
                 .select('id, abha_number, abha_address')
                 .eq('patient_id', patientId)
                 .eq('is_active', true)
@@ -918,7 +918,7 @@ export class AbdmService {
 
                 // If same address or updating, update the record
                 await this.supabase
-                    .from('patient_abha')
+                    .from('opdesk_patient_abha')
                     .update({
                         abha_number: fetchedAbhaNumber || existingActive.abha_number,
                         abha_address: fetchedAbhaAddress,
@@ -932,7 +932,7 @@ export class AbdmService {
                 // Check Clinic-level Address conflict
                 if (fetchedAbhaAddress) {
                     const { data: addressConflict } = await this.supabase
-                        .from('patient_abha')
+                        .from('opdesk_patient_abha')
                         .select('id')
                         .eq('clinic_id', clinicId)
                         .eq('abha_address', fetchedAbhaAddress)
@@ -955,7 +955,7 @@ export class AbdmService {
                     verified_at: new Date().toISOString()
                 };
 
-                const { error: insertError } = await this.supabase.from('patient_abha').insert([dbPayload]);
+                const { error: insertError } = await this.supabase.from('opdesk_patient_abha').insert([dbPayload]);
                 if (insertError) {
                     this.logger.error(`Database insert error for patient_abha: ${JSON.stringify(insertError)}`);
                     throw new HttpException('Database error while persisting ABHA', HttpStatus.INTERNAL_SERVER_ERROR);
@@ -1007,7 +1007,7 @@ export class AbdmService {
         try {
             // 1. Verify patient exists
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id')
                 .eq('id', patientId)
                 .single();
@@ -1070,7 +1070,7 @@ export class AbdmService {
         try {
             // 1. Verify patient exists
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('id')
                 .eq('id', patientId)
                 .single();
@@ -1150,7 +1150,7 @@ export class AbdmService {
         try {
             // 1. Verify patient and get clinic_id
             const { data: patient, error: patientError } = await this.supabase
-                .from('sakhi_clinic_patients')
+                .from('opdesk_sakhi_clinic_patients')
                 .select('clinic_id')
                 .eq('id', patientId)
                 .single();
@@ -1215,7 +1215,7 @@ export class AbdmService {
 
             // 6. Check for conflicts and persist
             const { data: existingActive } = await this.supabase
-                .from('patient_abha')
+                .from('opdesk_patient_abha')
                 .select('id, abha_number, abha_address')
                 .eq('patient_id', patientId)
                 .eq('is_active', true)
@@ -1238,7 +1238,7 @@ export class AbdmService {
                 // - Same ABHA Number + same Address -> update verification/timestamps
                 // - Existing ABHA Number matches but address is missing -> safely fill the address
                 await this.supabase
-                    .from('patient_abha')
+                    .from('opdesk_patient_abha')
                     .update({
                         abha_number: fetchedAbhaNumber || storedNumber,
                         abha_address: fetchedAbhaAddress || storedAddress,
@@ -1252,7 +1252,7 @@ export class AbdmService {
                 // - Incoming ABHA Number/Address already belongs to another active patient in the same clinic -> ConflictException (409)
                 if (fetchedAbhaNumber) {
                     const { data: numberConflict } = await this.supabase
-                        .from('patient_abha')
+                        .from('opdesk_patient_abha')
                         .select('id')
                         .eq('clinic_id', clinicId)
                         .eq('abha_number', fetchedAbhaNumber)
@@ -1266,7 +1266,7 @@ export class AbdmService {
 
                 if (fetchedAbhaAddress) {
                     const { data: addressConflict } = await this.supabase
-                        .from('patient_abha')
+                        .from('opdesk_patient_abha')
                         .select('id')
                         .eq('clinic_id', clinicId)
                         .eq('abha_address', fetchedAbhaAddress)
@@ -1289,7 +1289,7 @@ export class AbdmService {
                     verified_at: new Date().toISOString()
                 };
 
-                const { error: insertError } = await this.supabase.from('patient_abha').insert([dbPayload]);
+                const { error: insertError } = await this.supabase.from('opdesk_patient_abha').insert([dbPayload]);
                 if (insertError) {
                     this.logger.error(`Database insert error for patient_abha: ${JSON.stringify(insertError)}`);
                     throw new HttpException('Database error while persisting ABHA', HttpStatus.INTERNAL_SERVER_ERROR);
