@@ -40,7 +40,7 @@ export class SlotEngineService {
 
         // 1. Fetch Doctor Schedule Rules
         const { data: docConfig, error: configErr } = await supabase
-            .from('opdesk_doctor_schedules')
+            .from('doctor_schedules')
             .select('schedule')
             .eq('doctor_id', doctorId)
             .eq('tenant_id', tenantId)
@@ -76,7 +76,7 @@ export class SlotEngineService {
 
         // 2. Check Capacity
         const { count, error } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('id', { count: 'exact' })
             .eq('clinic_id', tenantId)
             .eq('doctor_id', doctorId)

@@ -63,7 +63,7 @@ export class AuditEventProcessor extends WorkerHost {
       }
 
       const supabase = this.supabaseService.getClient();
-      const { error } = await supabase.from('opdesk_sakhi_audit_logs').insert([{
+      const { error } = await supabase.from('sakhi_audit_logs').insert([{
         clinic_id: event.clinicId || null, // null for some auth events
         actor_id: actorId,
         action,

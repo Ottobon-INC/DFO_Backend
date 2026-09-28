@@ -27,7 +27,7 @@ export class MessageRepository {
         // First try personalSupabase conversation_messages
         try {
             const { data: created, error } = await this.personalSupabase
-                .from('opdesk_conversation_messages')
+                .from('conversation_messages')
                 .insert([{
                     thread_id: data.thread_id,
                     sender_id: data.sender_id,
@@ -53,7 +53,7 @@ export class MessageRepository {
         }
 
         const { data: created, error } = await this.orgSupabase
-            .from('opdesk_sakhi_conversations_new')
+            .from('sakhi_conversations_new')
             .insert([{
                 chat_id: data.thread_id,
                 user_id: data.sender_id,
@@ -72,7 +72,7 @@ export class MessageRepository {
         // 1. Check personalSupabase conversation_messages
         try {
             const { data: supaMsgs, error: supaErr } = await this.personalSupabase
-                .from('opdesk_conversation_messages')
+                .from('conversation_messages')
                 .select('*')
                 .eq('thread_id', threadId)
                 .order('created_at', { ascending: true });
@@ -116,13 +116,13 @@ export class MessageRepository {
         // 3. Fallback to orgSupabase sakhi_conversations_new
         try {
             const { data: thread } = await this.personalSupabase
-                .from('opdesk_conversation_threads')
+                .from('conversation_threads')
                 .select('user_id')
                 .eq('id', threadId)
                 .maybeSingle();
 
             let query = this.orgSupabase
-                .from('opdesk_sakhi_conversations_new')
+                .from('sakhi_conversations_new')
                 .select('*');
 
             if (thread && thread.user_id) {
@@ -131,7 +131,7 @@ export class MessageRepository {
                     query = query.eq('user_id', thread.user_id);
                 } else {
                     const { data: userLink } = await this.orgSupabase
-                        .from('opdesk_sakhi_clinic_users')
+                        .from('sakhi_clinic_users')
                         .select('id')
                         .eq('mobile', thread.user_id)
                         .maybeSingle();

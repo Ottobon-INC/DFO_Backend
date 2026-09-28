@@ -10,7 +10,7 @@ export class MarkNoShowAction {
         const minDate = pastDate.toISOString().split('T')[0];
 
         const { data: appointments, error } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select(`
                 id,
                 appointment_date,
@@ -39,7 +39,7 @@ export class MarkNoShowAction {
 
     static async execute(supabase: SupabaseClient, appointmentId: string, userId: string, role: Role | string) {
         const { data: appt, error: fetchError } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('status, patient_name_snapshot, start_time, doctor_name_snapshot, patient:sakhi_clinic_patients(name)')
             .eq('id', appointmentId)
             .single();
@@ -65,7 +65,7 @@ export class MarkNoShowAction {
         }
 
         const { error: updateError } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .update({
                 status: 'No-Show'
             })

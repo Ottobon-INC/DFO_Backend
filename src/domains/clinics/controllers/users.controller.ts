@@ -42,7 +42,7 @@ export class UsersController {
         const supabase = this.supabaseService.getClient();
         try {
             const { data, error } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('id, email, role, is_clinic_admin, is_active, created_at, first_name, last_name, middle_name, hospital_id, phone_number, department, designation, specialization, profile_image_url')
                 .eq('clinic_id', decoded.clinic_id);
 
@@ -125,7 +125,7 @@ export class UsersController {
                 is_active: true,
             };
 
-            const { data, error } = await supabase.from('opdesk_sakhi_clinic_users').insert([payload]).select('*').single();
+            const { data, error } = await supabase.from('sakhi_clinic_users').insert([payload]).select('*').single();
 
             if (error) {
                 if (error.code === '23505') { // Unique violation
@@ -136,7 +136,7 @@ export class UsersController {
 
             // Also keep clinic_staff bridge in sync
             try {
-                await supabase.from('opdesk_clinic_staff').upsert({
+                await supabase.from('clinic_staff').upsert({
                     user_id: data.id,
                     clinic_id: decoded.clinic_id,
                     role: role,
@@ -204,7 +204,7 @@ export class UsersController {
             Object.keys(payload).forEach(key => payload[key] === undefined && delete payload[key]);
 
             const { data, error } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .update(payload)
                 .eq('id', decoded.user_id)
                 .select()
@@ -266,7 +266,7 @@ export class UsersController {
         try {
             // Ensure the user being edited belongs to the same clinic
             const { data: targetUser, error: targetError } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('clinic_id, is_clinic_admin, role')
                 .eq('id', id)
                 .single();
@@ -340,7 +340,7 @@ export class UsersController {
             }
 
             const { data, error } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .update(updatePayload)
                 .eq('id', id)
                 .select('*')
@@ -356,7 +356,7 @@ export class UsersController {
             // Sync with clinic_staff table if role or is_active was updated
             if (role || is_active !== undefined) {
                 try {
-                    await supabase.from('opdesk_clinic_staff').upsert({
+                    await supabase.from('clinic_staff').upsert({
                         user_id: id,
                         clinic_id: decoded.clinic_id,
                         role: role || targetUser.role || 'Doctor',
@@ -401,7 +401,7 @@ export class UsersController {
         try {
             // Ensure the user being deleted belongs to the same clinic
             const { data: targetUser, error: targetError } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('clinic_id, is_clinic_admin, email')
                 .eq('id', id)
                 .single();
@@ -421,7 +421,7 @@ export class UsersController {
 
             // Also explicitly delete from clinic_staff since a soft delete won't cascade
             await supabase
-                .from('opdesk_clinic_staff')
+                .from('clinic_staff')
                 .delete()
                 .eq('user_id', id);
 
@@ -429,7 +429,7 @@ export class UsersController {
 
             // Soft delete the user from sakhi_clinic_users and rename email
             const { error } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .update({ is_active: false, email: deletedEmail })
                 .eq('id', id);
 
@@ -468,7 +468,7 @@ export class UsersController {
         try {
             // Ensure the user being restored belongs to the same clinic
             const { data: targetUser, error: targetError } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('clinic_id, email')
                 .eq('id', id)
                 .single();
@@ -490,7 +490,7 @@ export class UsersController {
 
             // Update user to be active again
             const { error } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .update({ is_active: true, email: restoredEmail })
                 .eq('id', id);
 

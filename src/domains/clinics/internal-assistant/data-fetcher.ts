@@ -26,7 +26,7 @@ export class DataFetcher {
 
     private static async getStallingLeads(supabase: SupabaseClient, decrypter: (text: string) => string) {
         const { data, error, count } = await supabase
-            .from('opdesk_sakhi_clinic_leads')
+            .from('sakhi_clinic_leads')
             .select('id, name, status, age, gender, inquiry, source, date_added', { count: 'exact' })
             .in('status', ['New Inquiry', 'Follow Up'])
             .order('date_added', { ascending: true })
@@ -50,7 +50,7 @@ export class DataFetcher {
         const today = new Date().toISOString().split('T')[0];
 
         let query = supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('status, doctor_id, type')
             .eq('appointment_date', today);
 
@@ -79,7 +79,7 @@ export class DataFetcher {
     private static async getWaitingPatients(supabase: SupabaseClient) {
         const today = new Date().toISOString().split('T')[0];
         const { data: appointments, error } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('status, created_at') // fall back to created_at if checked_in_at/arrived_at is not standard
             .eq('appointment_date', today)
             .in('status', ['Arrived', 'Checked-In']);
@@ -111,7 +111,7 @@ export class DataFetcher {
 
         // 1. Leads Summary
         const { count: leadsCount, error: leadError } = await supabase
-            .from('opdesk_sakhi_clinic_leads')
+            .from('sakhi_clinic_leads')
             .select('*', { count: 'exact', head: true })
             .gte('date_added', today);
 
@@ -119,7 +119,7 @@ export class DataFetcher {
 
         // 2. Stalling Leads Count
         const { count: stallingCount, error: stallingError } = await supabase
-            .from('opdesk_sakhi_clinic_leads')
+            .from('sakhi_clinic_leads')
             .select('*', { count: 'exact', head: true })
             .in('status', ['New Inquiry', 'Follow Up']);
 
@@ -127,7 +127,7 @@ export class DataFetcher {
 
         // 3. Appointments Summary
         const { count: apptCount, error: apptError } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('*', { count: 'exact', head: true })
             .eq('appointment_date', today);
 
@@ -135,7 +135,7 @@ export class DataFetcher {
 
         // 4. Waiting Patients
         const { count: waitingCount, error: waitingError } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('*', { count: 'exact', head: true })
             .eq('appointment_date', today)
             .in('status', ['Arrived', 'Checked-In']);

@@ -19,7 +19,7 @@ export class JanmasethuAssignmentEngine {
 
             // Search matches in clinics_coverage
             let query = this.orgSupabase
-                .from('opdesk_clinics_coverage')
+                .from('clinics_coverage')
                 .select('*')
                 .eq('is_available', true)
                 .eq('zip_code', cleanZip);
@@ -34,7 +34,7 @@ export class JanmasethuAssignmentEngine {
                 // Try prefix matching (first 3 digits of ZIP) as a fallback
                 const zipPrefix = cleanZip.substring(0, 3);
                 const { data: prefixData, error: prefixError } = await this.orgSupabase
-                    .from('opdesk_clinics_coverage')
+                    .from('clinics_coverage')
                     .select('*')
                     .eq('is_available', true)
                     .like('zip_code', `${zipPrefix}%`);

@@ -171,7 +171,7 @@ export class DocumentService {
             // Update Registry
             await this.documentRepo.markAsGenerated(docRecord.id, size);
             
-            await this.supabase.from('opdesk_sakhi_clinic_documents').update({
+            await this.supabase.from('sakhi_clinic_documents').update({
                 status: 'published'
             }).eq('id', docRecord.id);
 
@@ -185,7 +185,7 @@ export class DocumentService {
 
     async getPatientDocuments(patientId: string, actorId: string, actorRole: string): Promise<any[]> {
         const { data: documents } = await this.supabase
-            .from('opdesk_sakhi_clinic_documents')
+            .from('sakhi_clinic_documents')
             .select('*')
             .eq('patient_id', patientId);
 
@@ -227,7 +227,7 @@ export class DocumentService {
 
     async getDocumentById(documentId: string, actorId: string, actorRole: string): Promise<any> {
         const { data: doc } = await this.supabase
-            .from('opdesk_sakhi_clinic_documents')
+            .from('sakhi_clinic_documents')
             .select('*')
             .eq('id', documentId)
             .maybeSingle();
@@ -257,7 +257,7 @@ export class DocumentService {
         const fileName = `report_${timestamp}_${safeFileName}`;
         
         const { data: patient } = await this.supabase
-            .from('opdesk_sakhi_clinic_patients')
+            .from('sakhi_clinic_patients')
             .select('clinic_id')
             .eq('id', dto.patient_id)
             .single();
@@ -266,7 +266,7 @@ export class DocumentService {
 
         const size = await this.s3Service.uploadFile(filePath, file.buffer, file.mimetype);
 
-        const { data: doc } = await this.supabase.from('opdesk_sakhi_clinic_documents').insert([{
+        const { data: doc } = await this.supabase.from('sakhi_clinic_documents').insert([{
             patient_id: dto.patient_id,
             clinic_id: patient?.clinic_id,
             name: fileName,
@@ -283,25 +283,25 @@ export class DocumentService {
 
     private async fetchPatient(patientId: string) {
         const { data } = await this.supabase
-            .from('opdesk_sakhi_clinic_patients').select('*').eq('id', patientId).maybeSingle();
+            .from('sakhi_clinic_patients').select('*').eq('id', patientId).maybeSingle();
         return data || {};
     }
 
     private async fetchPrescriptionsByConsultation(groupId: string) {
         const { data } = await this.supabase
-            .from('opdesk_sakhi_clinic_prescriptions').select('*').eq('group_id', groupId);
+            .from('sakhi_clinic_prescriptions').select('*').eq('group_id', groupId);
         return data || [];
     }
 
     private async fetchDoctor(doctorId: string) {
         const { data } = await this.supabase
-            .from('opdesk_sakhi_clinic_users').select('*').eq('id', doctorId).maybeSingle();
+            .from('sakhi_clinic_users').select('*').eq('id', doctorId).maybeSingle();
         return data || {};
     }
 
     private async fetchClinic(clinicId: string) {
         const { data } = await this.supabase
-            .from('opdesk_clinics').select('*').eq('id', clinicId).maybeSingle();
+            .from('clinics').select('*').eq('id', clinicId).maybeSingle();
         return data || {};
     }
 }

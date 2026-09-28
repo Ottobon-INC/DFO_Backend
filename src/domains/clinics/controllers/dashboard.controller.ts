@@ -23,7 +23,7 @@ export class DashboardController {
         const supabase = this.supabaseService.getClient();
         try {
             const { data: todayAppointments, error: apptErr } = await supabase
-                .from('opdesk_sakhi_clinic_appointments')
+                .from('sakhi_clinic_appointments')
                 .select('*')
                 .eq('clinic_id', clinic_id)
                 .order('appointment_date', { ascending: true })
@@ -31,7 +31,7 @@ export class DashboardController {
             if (apptErr) throw apptErr;
 
             const { data: recentLeads, error: leadsError } = await supabase
-                .from('opdesk_sakhi_clinic_leads')
+                .from('sakhi_clinic_leads')
                 .select('*')
                 .eq('clinic_id', clinic_id)
                 .order('date_added', { ascending: false })
@@ -39,7 +39,7 @@ export class DashboardController {
             if (leadsError) throw leadsError;
 
             const { data: leadStatuses, error: funnelError } = await supabase
-                .from('opdesk_sakhi_clinic_leads')
+                .from('sakhi_clinic_leads')
                 .select('status')
                 .eq('clinic_id', clinic_id);
             if (funnelError) throw funnelError;
@@ -67,7 +67,7 @@ export class DashboardController {
         const supabase = this.supabaseService.getClient();
         try {
             const { data: leads, error: leadsError } = await supabase
-                .from('opdesk_sakhi_clinic_leads')
+                .from('sakhi_clinic_leads')
                 .select('id, status, date_added, created_at')
                 .eq('clinic_id', clinic_id);
             if (leadsError) throw leadsError;
@@ -104,7 +104,7 @@ export class DashboardController {
             // Average time to convert
             let avgTimeToConvertDays = 0;
             const { data: patientLinks, error: patientLinksError } = await supabase
-                .from('opdesk_sakhi_clinic_patients')
+                .from('sakhi_clinic_patients')
                 .select('lead_id, registration_date, created_at')
                 .eq('clinic_id', clinic_id)
                 .not('lead_id', 'is', null);
@@ -146,7 +146,7 @@ export class DashboardController {
 
             // Intervention queue
             const { data: queueDataRaw, error: queueError } = await supabase
-                .from('opdesk_sakhi_clinic_leads')
+                .from('sakhi_clinic_leads')
                 .select('id, name, phone, status, date_added, created_at')
                 .eq('clinic_id', clinic_id)
                 .eq('status', CRO_QUEUE_STATUS)

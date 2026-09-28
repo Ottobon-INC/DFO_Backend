@@ -15,7 +15,7 @@ export class ThreadRepository {
         const patientMap: Record<string, string> = {};
         try {
             const { data: pts } = await this.supabase
-                .from('opdesk_sakhi_clinic_patients')
+                .from('sakhi_clinic_patients')
                 .select('name, mobile');
             if (pts) {
                 for (const p of pts) {
@@ -63,7 +63,7 @@ export class ThreadRepository {
 
     async findById(id: string): Promise<Thread | null> {
         const { data, error } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .select('*')
             .eq('id', id)
             .single();
@@ -79,7 +79,7 @@ export class ThreadRepository {
      */
     async updateAtomic(id: string, version: number, updates: Partial<Thread>): Promise<Thread> {
         const { data, error } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .update({
                 ...updates,
                 version: version + 1,
@@ -104,7 +104,7 @@ export class ThreadRepository {
 
     async create(thread: Partial<Thread>): Promise<Thread> {
         const { data, error } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .insert([thread])
             .select()
             .single();
@@ -115,7 +115,7 @@ export class ThreadRepository {
 
     async findAll(): Promise<Thread[]> {
         const { data, error } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .select('*')
             .order('updated_at', { ascending: false });
 
@@ -130,7 +130,7 @@ export class ThreadRepository {
         else if (status === 'green') statusList = ['green', 'AI_ACTIVE'];
 
         const { data, error } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .select('*')
             .in('status', statusList)
             .order('updated_at', { ascending: false });
@@ -141,7 +141,7 @@ export class ThreadRepository {
 
     async findFrontDeskQueue(): Promise<Thread[]> {
         const { data, error } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .select('*')
             .order('updated_at', { ascending: false });
 

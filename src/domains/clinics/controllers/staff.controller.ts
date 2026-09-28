@@ -38,7 +38,7 @@ export class StaffController {
         try {
             // Join clinic_staff with sakhi_clinic_users
             const { data, error } = await supabase
-                .from('opdesk_clinic_staff')
+                .from('clinic_staff')
                 .select(`
                     id,
                     role,
@@ -73,7 +73,7 @@ export class StaffController {
 
             // Also include clinic users (doctors, admins) directly from sakhi_clinic_users
             const { data: clinicUsers } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('id, first_name, last_name, email, role, is_active, created_at, specialization')
                 .eq('clinic_id', clinic_id);
 
@@ -134,7 +134,7 @@ export class StaffController {
 
             // Check if user exists
             const { data: userExists, error: checkError } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('id')
                 .eq('id', user_id)
                 .maybeSingle();
@@ -152,7 +152,7 @@ export class StaffController {
             };
 
             const { data, error } = await supabase
-                .from('opdesk_clinic_staff')
+                .from('clinic_staff')
                 .insert([payload])
                 .select()
                 .single();
@@ -193,7 +193,7 @@ export class StaffController {
         try {
             // Delete the assignment from clinic_staff ensuring it belongs to the current clinic
             const { data, error } = await supabase
-                .from('opdesk_clinic_staff')
+                .from('clinic_staff')
                 .delete()
                 .eq('id', assignment_id)
                 .eq('clinic_id', clinic_id)

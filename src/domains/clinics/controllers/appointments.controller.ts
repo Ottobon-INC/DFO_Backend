@@ -47,7 +47,7 @@ export class AppointmentsController {
             const start = (pageNum - 1) * limitNum;
             const end = start + limitNum - 1;
 
-            let query = supabase.from('opdesk_sakhi_clinic_appointments')
+            let query = supabase.from('sakhi_clinic_appointments')
                 .select(`id, patient_id, lead_id, doctor_id, appointment_date, start_time, end_time, type, status, queue_status, token_number, visit_reason, resource_id, patient_name_snapshot, sex_snapshot, doctor_name_snapshot, patient_phone_snapshot, patient_dob_snapshot, patient_age_snapshot, cancellation_reason, cancelled_at, created_at, doctor:sakhi_clinic_users!doctor_id(first_name, last_name), patient:sakhi_clinic_patients!patient_id(name)`, { count: 'exact' })
                 .eq('clinic_id', clinic_id);
 
@@ -91,7 +91,7 @@ export class AppointmentsController {
 
         try {
             const { data, error } = await supabase
-                .from('opdesk_sakhi_clinic_users')
+                .from('sakhi_clinic_users')
                 .select('id, first_name, last_name, specialization, role')
                 .eq('clinic_id', clinic_id)
                 .in('role', ['Doctor', 'Superadmin', 'Admin'])
@@ -216,20 +216,20 @@ export class AppointmentsController {
 
             if (!patient_id && !lead_id) {
                 if (body.name && body.phone) {
-                    const { data: existingPatient } = await supabase.from('opdesk_sakhi_clinic_patients').select('id, name, mobile').eq('mobile', body.phone).eq('clinic_id', clinic_id).maybeSingle();
+                    const { data: existingPatient } = await supabase.from('sakhi_clinic_patients').select('id, name, mobile').eq('mobile', body.phone).eq('clinic_id', clinic_id).maybeSingle();
                     if (existingPatient?.id) {
                         patient_id = existingPatient.id;
                         if (!nameSnapshot) nameSnapshot = existingPatient.name;
                         if (!patientPhoneSnapshot) patientPhoneSnapshot = existingPatient.mobile;
                     } else {
-                        const { data: existingLead, error: existingLeadError } = await supabase.from('opdesk_sakhi_clinic_leads').select('id, name, phone').eq('phone', body.phone).eq('clinic_id', clinic_id).maybeSingle();
+                        const { data: existingLead, error: existingLeadError } = await supabase.from('sakhi_clinic_leads').select('id, name, phone').eq('phone', body.phone).eq('clinic_id', clinic_id).maybeSingle();
                         if (existingLeadError && existingLeadError.code !== 'PGRST116') throw existingLeadError;
                         if (existingLead?.id) {
                             lead_id = existingLead.id;
                             if (!nameSnapshot) nameSnapshot = existingLead.name ?? nameSnapshot;
                             if (!patientPhoneSnapshot) patientPhoneSnapshot = existingLead.phone ?? patientPhoneSnapshot;
                         } else {
-                            const { data: newLead, error: leadError } = await supabase.from('opdesk_sakhi_clinic_leads').insert(this.utils.sanitizePayload({ clinic_id, name: body.name, phone: body.phone })).select('id, name, phone').single();
+                            const { data: newLead, error: leadError } = await supabase.from('sakhi_clinic_leads').insert(this.utils.sanitizePayload({ clinic_id, name: body.name, phone: body.phone })).select('id, name, phone').single();
                             if (leadError) throw leadError;
                             lead_id = newLead?.id;
                             if (!nameSnapshot) nameSnapshot = newLead?.name ?? nameSnapshot;
@@ -241,13 +241,13 @@ export class AppointmentsController {
 
             if (patient_id) {
                 if (!this.utils.isUuid(patient_id)) throw new HttpException({ success: false, error: 'Invalid patient id' }, HttpStatus.BAD_REQUEST);
-                const { data: patient, error: patientError } = await supabase.from('opdesk_sakhi_clinic_patients').select('id, name, mobile').eq('id', patient_id).eq('clinic_id', clinic_id).single();
+                const { data: patient, error: patientError } = await supabase.from('sakhi_clinic_patients').select('id, name, mobile').eq('id', patient_id).eq('clinic_id', clinic_id).single();
                 if (patientError?.code === 'PGRST116' || !patient) throw new HttpException({ success: false, error: 'Patient not found or belongs to another clinic' }, HttpStatus.NOT_FOUND);
                 if (patientError) throw patientError;
                 if (!nameSnapshot) nameSnapshot = patient.name;
                 if (!patientPhoneSnapshot) patientPhoneSnapshot = patient.mobile;
             } else if (lead_id && (!nameSnapshot || !patientPhoneSnapshot)) {
-                const { data: leadRow, error: leadError } = await supabase.from('opdesk_sakhi_clinic_leads').select('name, phone').eq('id', lead_id).eq('clinic_id', clinic_id).single();
+                const { data: leadRow, error: leadError } = await supabase.from('sakhi_clinic_leads').select('name, phone').eq('id', lead_id).eq('clinic_id', clinic_id).single();
                 if (leadError && leadError.code !== 'PGRST116') throw leadError;
                 if (leadRow) {
                     if (!nameSnapshot) nameSnapshot = leadRow.name ?? nameSnapshot;
@@ -257,7 +257,7 @@ export class AppointmentsController {
 
             if (doctor_id) {
                 const { data: doctorRow, error: doctorNameError } = await supabase
-                    .from('opdesk_sakhi_clinic_users')
+                    .from('sakhi_clinic_users')
                     .select('id, first_name, last_name')
                     .eq('id', doctor_id)
                     .eq('clinic_id', clinic_id)
@@ -280,7 +280,7 @@ export class AppointmentsController {
                 source, referral_doctor: referralDoctor, referral_doctor_phone: referralDoctorPhone, referral_notes: referralNotes,
             });
 
-            const { data, error } = await supabase.from('opdesk_sakhi_clinic_appointments').insert(payload).select().single();
+            const { data, error } = await supabase.from('sakhi_clinic_appointments').insert(payload).select().single();
             if (error) throw error;
 
             if (doctor_id) {
@@ -312,7 +312,7 @@ export class AppointmentsController {
 
         try {
             const { data, error } = await supabase
-                .from('opdesk_sakhi_clinic_appointments')
+                .from('sakhi_clinic_appointments')
                 .select('id, patient_id, lead_id, doctor_id, appointment_date, start_time, end_time, type, status, visit_reason, resource_id, doctor_name_snapshot, cancellation_reason, cancelled_at, created_at, updated_at')
                 .eq('id', id)
                 .eq('clinic_id', clinic_id)
@@ -340,7 +340,7 @@ export class AppointmentsController {
 
         try {
             const { data: appointment, error: appointmentError } = await supabase
-                .from('opdesk_sakhi_clinic_appointments').select('status, doctor_id, start_time, appointment_date').eq('id', id).eq('clinic_id', clinic_id).single();
+                .from('sakhi_clinic_appointments').select('status, doctor_id, start_time, appointment_date').eq('id', id).eq('clinic_id', clinic_id).single();
             if (appointmentError?.code === 'PGRST116' || !appointment) {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
@@ -386,7 +386,7 @@ export class AppointmentsController {
                     validatedDoctorId = undefined;
                 } else {
                     const { data: doctor, error: doctorError } = await supabase
-                        .from('opdesk_sakhi_clinic_users').select('id').eq('id', body.doctor_id).eq('clinic_id', clinic_id).eq('role', 'Doctor').single();
+                        .from('sakhi_clinic_users').select('id').eq('id', body.doctor_id).eq('clinic_id', clinic_id).eq('role', 'Doctor').single();
                     if (doctorError?.code === 'PGRST116' || !doctor) {
                         throw new HttpException({ success: false, error: 'Doctor not found or invalid role', code: 'DOCTOR_NOT_FOUND' }, HttpStatus.BAD_REQUEST);
                     }
@@ -455,7 +455,7 @@ export class AppointmentsController {
             
             const timeOrDoctorChanged = (oldDoctor !== newDoctor) || (oldDate !== newDate) || (oldStartTime !== newStartTime);
 
-            const { data, error } = await supabase.from('opdesk_sakhi_clinic_appointments').update(allowed).eq('id', id).eq('clinic_id', clinic_id).select().single();
+            const { data, error } = await supabase.from('sakhi_clinic_appointments').update(allowed).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
@@ -498,7 +498,7 @@ export class AppointmentsController {
             }
 
             const { data: appointment, error: appointmentError } = await supabase
-                .from('opdesk_sakhi_clinic_appointments').select('status, doctor_id, appointment_date, start_time').eq('id', id).eq('clinic_id', clinic_id).single();
+                .from('sakhi_clinic_appointments').select('status, doctor_id, appointment_date, start_time').eq('id', id).eq('clinic_id', clinic_id).single();
             if (appointmentError?.code === 'PGRST116' || !appointment) {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
@@ -512,7 +512,7 @@ export class AppointmentsController {
             
             let token_number: string | undefined = undefined;
             if (status === 'Checked-In') {
-                const { data: currentAppt } = await supabase.from('opdesk_sakhi_clinic_appointments').select('token_number').eq('id', id).single();
+                const { data: currentAppt } = await supabase.from('sakhi_clinic_appointments').select('token_number').eq('id', id).single();
                 if (!currentAppt?.token_number && appointment.doctor_id) {
                     token_number = await this.generateSmartToken(supabase, clinic_id, appointment.doctor_id, appointment.appointment_date);
                 }
@@ -540,7 +540,7 @@ export class AppointmentsController {
                 payload.token_number = token_number;
             }
 
-            const { data, error } = await supabase.from('opdesk_sakhi_clinic_appointments').update(payload).eq('id', id).eq('clinic_id', clinic_id).select().single();
+            const { data, error } = await supabase.from('sakhi_clinic_appointments').update(payload).eq('id', id).eq('clinic_id', clinic_id).select().single();
             if (error?.code === 'PGRST116') {
                 throw new HttpException({ success: false, error: 'Appointment not found', code: 'APPOINTMENT_NOT_FOUND' }, HttpStatus.NOT_FOUND);
             }
@@ -584,7 +584,7 @@ export class AppointmentsController {
             // 1. Resolve or Create Patient
             let patient_id;
             // Exact match on mobile and name (case insensitive)
-            const { data: existingPatient } = await supabase.from('opdesk_sakhi_clinic_patients')
+            const { data: existingPatient } = await supabase.from('sakhi_clinic_patients')
                 .select('id')
                 .eq('mobile', phone)
                 .ilike('name', name)
@@ -594,7 +594,7 @@ export class AppointmentsController {
             if (existingPatient?.id) {
                 patient_id = existingPatient.id;
             } else {
-                const { data: newPatient, error: patientError } = await supabase.from('opdesk_sakhi_clinic_patients').insert([{
+                const { data: newPatient, error: patientError } = await supabase.from('sakhi_clinic_patients').insert([{
                     clinic_id,
                     name,
                     mobile: phone,
@@ -627,7 +627,7 @@ export class AppointmentsController {
                 patient_phone_snapshot: phone
             };
 
-            const { data: appointment, error: appointmentError } = await supabase.from('opdesk_sakhi_clinic_appointments').insert([payload]).select().single();
+            const { data: appointment, error: appointmentError } = await supabase.from('sakhi_clinic_appointments').insert([payload]).select().single();
             if (appointmentError) throw appointmentError;
 
             // Trigger events
@@ -656,7 +656,7 @@ export class AppointmentsController {
         try {
             // 1. Fetch Appointment
             const { data: appointment, error: apptError } = await supabase
-                .from('opdesk_sakhi_clinic_appointments')
+                .from('sakhi_clinic_appointments')
                 .select('id, clinic_id, patient_id, lead_id, doctor_id, appointment_date, start_time, status, token_number, patient_name_snapshot, patient_phone_snapshot, patient_age_snapshot, sex_snapshot, patient_email_snapshot, patient_address_snapshot, patient_postal_code_snapshot, patient_marital_status_snapshot, patient_dob_snapshot')
                 .eq('id', id)
                 .eq('clinic_id', clinic_id)
@@ -686,7 +686,7 @@ export class AppointmentsController {
                 });
 
                 const { data: updatedAppointment, error: updateApptError } = await supabase
-                    .from('opdesk_sakhi_clinic_appointments')
+                    .from('sakhi_clinic_appointments')
                     .update(apptUpdatePayload)
                     .eq('id', id)
                     .eq('clinic_id', clinic_id)
@@ -696,7 +696,7 @@ export class AppointmentsController {
                 if (updateApptError) throw updateApptError;
 
                 const { data: existingPatient } = await supabase
-                    .from('opdesk_sakhi_clinic_patients')
+                    .from('sakhi_clinic_patients')
                     .select('id, uhid')
                     .eq('id', appointment.patient_id)
                     .eq('clinic_id', clinic_id)
@@ -725,7 +725,7 @@ export class AppointmentsController {
 
             // 2. Fetch Lead
             const { data: lead, error: leadError } = await supabase
-                .from('opdesk_sakhi_clinic_leads')
+                .from('sakhi_clinic_leads')
                 .select('*')
                 .eq('id', appointment.lead_id)
                 .eq('clinic_id', clinic_id)
@@ -834,7 +834,7 @@ export class AppointmentsController {
             });
 
             const { data: updatedAppointment, error: updateApptError } = await supabase
-                .from('opdesk_sakhi_clinic_appointments')
+                .from('sakhi_clinic_appointments')
                 .update(apptUpdatePayload)
                 .eq('id', id)
                 .eq('clinic_id', clinic_id)
@@ -881,14 +881,14 @@ export class AppointmentsController {
 
     private async generateSmartToken(supabase: any, clinic_id: string, doctor_id: string, dateStr: string): Promise<string> {
         // Check how many doctors in clinic
-        const { count: doctorCount } = await supabase.from('opdesk_sakhi_clinic_users')
+        const { count: doctorCount } = await supabase.from('sakhi_clinic_users')
             .select('id', { count: 'exact', head: true })
             .eq('clinic_id', clinic_id).eq('role', 'Doctor');
 
         let prefix = 'T-';
         if (doctorCount && doctorCount > 1 && doctor_id) {
             // Get doctor name for prefix
-            const { data: doctor } = await supabase.from('opdesk_sakhi_clinic_users').select('first_name, last_name').eq('id', doctor_id).single();
+            const { data: doctor } = await supabase.from('sakhi_clinic_users').select('first_name, last_name').eq('id', doctor_id).single();
             if (doctor && doctor.first_name) {
                 let init = doctor.first_name.charAt(0).toUpperCase();
                 if (doctor.last_name) {
@@ -901,7 +901,7 @@ export class AppointmentsController {
         }
 
         // Count today's active appointments to determine queue number
-        const { count: appointmentsCount } = await supabase.from('opdesk_sakhi_clinic_appointments')
+        const { count: appointmentsCount } = await supabase.from('sakhi_clinic_appointments')
             .select('id', { count: 'exact', head: true })
             .eq('clinic_id', clinic_id)
             .eq('appointment_date', dateStr)
@@ -929,7 +929,7 @@ export class AppointmentsController {
         try {
             // Find all appointments before today that are still in an open / unfinalized state
             const { data: staleAppts, error: fetchErr } = await supabase
-                .from('opdesk_sakhi_clinic_appointments')
+                .from('sakhi_clinic_appointments')
                 .select('id, patient_id, doctor_id, appointment_date, start_time, status, queue_status')
                 .eq('clinic_id', clinic_id)
                 .lt('appointment_date', localToday)
@@ -953,17 +953,17 @@ export class AppointmentsController {
 
                 if (appt.patient_id) {
                     const [notesRes, rxRes, vitalsRes] = await Promise.all([
-                        supabase.from('opdesk_sakhi_clinical_notes')
+                        supabase.from('sakhi_clinical_notes')
                             .select('id')
                             .eq('clinic_id', clinic_id)
                             .eq('patient_id', appt.patient_id)
                             .limit(1),
-                        supabase.from('opdesk_sakhi_clinic_prescriptions')
+                        supabase.from('sakhi_clinic_prescriptions')
                             .select('id')
                             .eq('clinic_id', clinic_id)
                             .eq('patient_id', appt.patient_id)
                             .limit(1),
-                        supabase.from('opdesk_sakhi_clinic_patient_vitals')
+                        supabase.from('sakhi_clinic_patient_vitals')
                             .select('id')
                             .eq('patient_id', appt.patient_id)
                             .limit(1)
@@ -976,7 +976,7 @@ export class AppointmentsController {
 
                 if (hasClinicalData) {
                     await supabase
-                        .from('opdesk_sakhi_clinic_appointments')
+                        .from('sakhi_clinic_appointments')
                         .update({
                             status: 'Completed',
                             queue_status: 'COMPLETED',
@@ -987,7 +987,7 @@ export class AppointmentsController {
                     completedCount++;
                 } else if (appt.status === 'Checked-In' || appt.status === 'Arrived' || appt.status === 'In-Consultation') {
                     await supabase
-                        .from('opdesk_sakhi_clinic_appointments')
+                        .from('sakhi_clinic_appointments')
                         .update({
                             status: 'No Show',
                             queue_status: 'NO_SHOW',
@@ -1003,7 +1003,7 @@ export class AppointmentsController {
                     noShowCount++;
                 } else {
                     await supabase
-                        .from('opdesk_sakhi_clinic_appointments')
+                        .from('sakhi_clinic_appointments')
                         .update({
                             status: 'No Show',
                             queue_status: 'NO_SHOW',

@@ -12,7 +12,7 @@ export class AnalyticsService {
 
         // 1. Total Patients Served
         const { count: patientsServed } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('id', { count: 'exact' })
             .eq('clinic_id', tenantId)
             .eq('doctor_id', doctorId)
@@ -22,7 +22,7 @@ export class AnalyticsService {
 
         // 2. Average Consultation Time (Approximation via audit logs)
         const { data: appointments } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('id')
             .eq('clinic_id', tenantId)
             .eq('doctor_id', doctorId)
@@ -36,7 +36,7 @@ export class AnalyticsService {
         if (appointments && appointments.length > 0) {
             const apptIds = appointments.map(a => a.id);
             const { data: logs } = await supabase
-                .from('opdesk_qms_audit_logs')
+                .from('qms_audit_logs')
                 .select('appointment_id, new_status, created_at')
                 .in('appointment_id', apptIds)
                 .in('new_status', ['CALLED', 'IN_CONSULTATION', 'COMPLETED'])
@@ -77,7 +77,7 @@ export class AnalyticsService {
         const supabase = this.supabaseService.getClient();
 
         const { data: appointments, error } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('id, queue_status, source, appointment_time')
             .eq('clinic_id', tenantId)
             .gte('appointment_date', startDate + 'T00:00:00Z')
@@ -117,7 +117,7 @@ export class AnalyticsService {
         const supabase = this.supabaseService.getClient();
         
         const { data, error } = await supabase
-            .from('opdesk_sakhi_clinic_appointments')
+            .from('sakhi_clinic_appointments')
             .select('token_number, appointment_date, appointment_time, queue_status, source, doctor_id')
             .eq('clinic_id', tenantId)
             .gte('appointment_date', startDate + 'T00:00:00Z')

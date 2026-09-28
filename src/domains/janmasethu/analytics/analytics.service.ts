@@ -98,7 +98,7 @@ export class AnalyticsService {
 
     private async calculateRiskDistribution(): Promise<Record<string, number>> {
         const { data } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .select('status') // Map: status is the risk level (red, yellow, green)
             .is('deleted_at', null);
 
@@ -112,7 +112,7 @@ export class AnalyticsService {
     private async calculateSLABreachRate(): Promise<number> {
         // Find audit logs for breaches and cancellations (successes)
         const { data: logs } = await this.supabase
-            .from('opdesk_audit_logs')
+            .from('audit_logs')
             .select('event_type')
             .in('event_type', ['SLA_BREACH', 'SLA_CANCELED']);
 
@@ -125,7 +125,7 @@ export class AnalyticsService {
 
     private async calculateClinicianLoad() {
         const { data: threads } = await this.supabase
-            .from('opdesk_conversation_threads')
+            .from('conversation_threads')
             .select('assigned_user_id')
             .eq('ownership', 'HUMAN')
             .not('assigned_user_id', 'is', null);
@@ -147,7 +147,7 @@ export class AnalyticsService {
 
     private async calculateAppointmentStats() {
         const { data: appointments } = await this.supabase
-            .from('opdesk_dfo_appointments')
+            .from('dfo_appointments')
             .select('status');
 
         const counts = (appointments || []).reduce((acc, a) => {

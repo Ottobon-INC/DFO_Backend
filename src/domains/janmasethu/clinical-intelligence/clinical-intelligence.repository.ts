@@ -16,7 +16,7 @@ export class ClinicalIntelligenceRepository {
     metadata?: any;
   }): Promise<any | null> {
     const { data, error } = await this.supabase
-      .from('opdesk_clinical_analyses')
+      .from('clinical_analyses')
       .insert({
         patient_conversation: analysisRecord.patient_conversation,
         structured_analysis: analysisRecord.structured_analysis,
@@ -36,7 +36,7 @@ export class ClinicalIntelligenceRepository {
 
   async getAnalysisById(id: string): Promise<any | null> {
     const { data, error } = await this.supabase
-      .from('opdesk_clinical_analyses')
+      .from('clinical_analyses')
       .select('*')
       .eq('id', id)
       .single();

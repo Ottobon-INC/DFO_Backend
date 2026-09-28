@@ -21,7 +21,7 @@ export class AuditLogger {
 
         // 2. DB Log
         try {
-            await supabase.from('opdesk_sakhi_audit_logs').insert({
+            await supabase.from('sakhi_audit_logs').insert({
                 actor_id: params.userId,
                 action: params.action,
                 entity_name: 'sakhi_clinic_appointments',

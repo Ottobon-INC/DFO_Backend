@@ -17,7 +17,7 @@ export class ClinicsIvfService {
 
         // 1. Get Active Cycle
         const { data: cycle, error: cycleError } = await client
-            .from('opdesk_sakhi_ivf_cycles')
+            .from('sakhi_ivf_cycles')
             .select('id')
             .eq('patient_id', patientId)
             .eq('clinic_id', clinicId)
@@ -27,7 +27,7 @@ export class ClinicsIvfService {
 
         // Fetch patient for demographics
         const { data: patient } = await client
-            .from('opdesk_sakhi_clinic_patients')
+            .from('sakhi_clinic_patients')
             .select('name, age, gender, extra_details')
             .eq('id', patientId)
             .maybeSingle();
@@ -65,23 +65,23 @@ export class ClinicsIvfService {
             stimulationSheetReq
         ] = await Promise.all([
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_female_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('sakhi_ivf_female_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_procedures').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('sakhi_ivf_procedures').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'FEMALE').maybeSingle(),
+            client.from('sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'FEMALE').maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'MALE').maybeSingle(),
+            client.from('sakhi_ivf_lab_panels').select('*').eq('cycle_id', cycleId).eq('panel_type', 'MALE').maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_baseline_usg').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('sakhi_ivf_baseline_usg').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_male_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('sakhi_ivf_male_profile').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_semen_analysis').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('sakhi_ivf_semen_analysis').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_treatment_tracking').select('*').eq('cycle_id', cycleId).maybeSingle(),
+            client.from('sakhi_ivf_treatment_tracking').select('*').eq('cycle_id', cycleId).maybeSingle(),
             // @ts-ignore
-            client.from('opdesk_sakhi_ivf_stimulation_sheet').select('*').eq('cycle_id', cycleId).maybeSingle()
+            client.from('sakhi_ivf_stimulation_sheet').select('*').eq('cycle_id', cycleId).maybeSingle()
         ]);
 
         const femaleProfile = femaleProfileReq.data ? { ...femaleProfileReq.data } : {};
@@ -121,7 +121,7 @@ export class ClinicsIvfService {
 
         // 1. Get or Create Active Cycle
         let { data: cycle, error: cycleError } = await client
-            .from('opdesk_sakhi_ivf_cycles')
+            .from('sakhi_ivf_cycles')
             .select('id')
             .eq('patient_id', patientId)
             .eq('clinic_id', clinicId)
@@ -136,7 +136,7 @@ export class ClinicsIvfService {
 
         if (!cycle) {
             const { data: newCycle, error: createError } = await client
-                .from('opdesk_sakhi_ivf_cycles')
+                .from('sakhi_ivf_cycles')
                 .insert({
                     patient_id: patientId,
                     clinic_id: clinicId,
@@ -167,7 +167,7 @@ export class ClinicsIvfService {
                     (async () => {
                         try {
                             const { data: currentPatient } = await client
-                                .from('opdesk_sakhi_clinic_patients')
+                                .from('sakhi_clinic_patients')
                                 .select('extra_details')
                                 .eq('id', patientId)
                                 .maybeSingle();
@@ -180,7 +180,7 @@ export class ClinicsIvfService {
                             };
 
                             await client
-                                .from('opdesk_sakhi_clinic_patients')
+                                .from('sakhi_clinic_patients')
                                 .update({ extra_details: extraDetails })
                                 .eq('id', patientId);
                         } catch (err) {

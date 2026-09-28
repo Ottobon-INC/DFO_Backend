@@ -22,7 +22,7 @@ export class FollowUpsService {
     async createFollowUp(clinicId: string, payload: CreateFollowUpDto) {
         try {
             const { data, error } = await this.supabaseService.getClient()
-                .from('opdesk_follow_ups')
+                .from('follow_ups')
                 .insert([{
                     clinic_id: clinicId,
                     patient_id: payload.patient_id,
@@ -45,7 +45,7 @@ export class FollowUpsService {
     async getFollowUps(clinicId: string, filters?: { patient_id?: string; date?: string; status?: string }) {
         try {
             let query = this.supabaseService.getClient()
-                .from('opdesk_follow_ups')
+                .from('follow_ups')
                 .select(`
                     *,
                     patient:patient_id(name, mobile, uhid),
@@ -102,7 +102,7 @@ export class FollowUpsService {
             if (payload.notes !== undefined) updatePayload.notes = payload.notes;
 
             const { data, error } = await this.supabaseService.getClient()
-                .from('opdesk_follow_ups')
+                .from('follow_ups')
                 .update(updatePayload)
                 .eq('id', followUpId)
                 .eq('clinic_id', clinicId)
